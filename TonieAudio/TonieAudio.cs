@@ -1,4 +1,4 @@
-﻿/* Copyright (c) 2020 g3gg0.de
+/* Copyright (c) 2020 g3gg0.de
 
    Redistribution and use in source and binary forms, with or without
    modification, are permitted provided that the following conditions
@@ -502,7 +502,7 @@ namespace TonieFile
                             try
                             {
                                 var prefixStream = new Mp3FileReader(prefixFile);
-                                var prefixResampled = new MediaFoundationResampler(prefixStream, outFormat);
+                                var prefixResampled = new CrossPlatformResampler(prefixStream, outFormat);
 
                                 while (true)
                                 {
@@ -554,7 +554,7 @@ namespace TonieFile
                             continue;
                         }
 
-                        var streamResampled = new MediaFoundationResampler(stream, outFormat);
+                        var streamResampled = new CrossPlatformResampler(stream, outFormat);
 
                         while (true)
                         {

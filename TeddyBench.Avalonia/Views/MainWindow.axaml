@@ -1,0 +1,131 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TeddyBench.Avalonia.ViewModels"
+        xmlns:converters="using:TeddyBench.Avalonia.Converters"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
+        x:Class="TeddyBench.Avalonia.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="TeddyBench - Cross-platform Tonie File Manager"
+        Width="1200" Height="800">
+
+    <Window.Resources>
+        <converters:PathToBitmapConverter x:Key="PathToBitmapConverter"/>
+    </Window.Resources>
+
+    <Design.DataContext>
+        <vm:MainWindowViewModel/>
+    </Design.DataContext>
+
+    <DockPanel>
+        <Menu DockPanel.Dock="Top">
+            <MenuItem Header="_File">
+                <MenuItem Header="_Open Directory..." Command="{Binding OpenDirectoryCommand}"/>
+                <Separator/>
+                <MenuItem Header="E_xit" Command="{Binding ExitCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_Operations">
+                <MenuItem Header="_Encode Files..." Command="{Binding EncodeFilesCommand}"/>
+                <MenuItem Header="_Decode Selected" Command="{Binding DecodeSelectedCommand}"/>
+                <MenuItem Header="Show _Info" Command="{Binding ShowInfoCommand}"/>
+            </MenuItem>
+            <MenuItem Header="_Help">
+                <MenuItem Header="_About" Command="{Binding AboutCommand}"/>
+            </MenuItem>
+        </Menu>
+
+        <Border DockPanel.Dock="Bottom" Background="#2C3E50" Padding="5">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock Grid.Column="0" Text="{Binding StatusText}" Foreground="White" VerticalAlignment="Center"/>
+                <ProgressBar Grid.Column="1"
+                             Width="200"
+                             Height="20"
+                             Margin="10,0,0,0"
+                             IsIndeterminate="{Binding IsScanning}"
+                             IsVisible="{Binding IsScanning}"/>
+            </Grid>
+        </Border>
+
+        <Grid Margin="10">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto"/>
+                <RowDefinition Height="*"/>
+                <RowDefinition Height="Auto"/>
+            </Grid.RowDefinitions>
+
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
+                <Button Command="{Binding OpenDirectoryCommand}" Content="Open Directory"/>
+                <Button Command="{Binding DecodeSelectedCommand}" Content="Decode Selected"/>
+                <Button Command="{Binding ShowInfoCommand}" Content="Show Info"/>
+                <Button Command="{Binding RefreshCommand}" Content="Refresh"/>
+                <Button Command="{Binding RemoveAllLiveFlagsCommand}" Content="Remove All LIVE Flags"/>
+            </StackPanel>
+
+            <Border Grid.Row="1" BorderBrush="#CCCCCC" BorderThickness="1">
+                <ScrollViewer>
+                    <ItemsControl ItemsSource="{Binding TonieFiles}">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <WrapPanel Orientation="Horizontal"/>
+                            </ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Button Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).SelectTonieCommand}"
+                                        CommandParameter="{Binding}"
+                                        Tag="{Binding}"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Padding="5"
+                                        Margin="5"
+                                        Name="TonieButton">
+                                    <Button.ContextMenu>
+                                        <ContextMenu Opened="ContextMenu_Opened">
+                                            <MenuItem Header="Toggle LIVE Flag"
+                                                      Command="{Binding $parent[Window].DataContext.ToggleLiveFlagCommand}"
+                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                            <Separator/>
+                                            <MenuItem Header="Decode"
+                                                      Command="{Binding $parent[Window].DataContext.DecodeTonieCommand}"
+                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                            <MenuItem Header="Show Info"
+                                                      Command="{Binding $parent[Window].DataContext.ShowTonieInfoCommand}"
+                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
+                                    <StackPanel Width="120" Spacing="5">
+                                        <Border Width="100" Height="100" BorderBrush="#CCCCCC" BorderThickness="1"
+                                                CornerRadius="5" Background="White">
+                                            <Image Source="{Binding ImagePath, Converter={StaticResource PathToBitmapConverter}}"
+                                                   Stretch="UniformToFill"
+                                                   IsVisible="{Binding ImagePath, Converter={x:Static ObjectConverters.IsNotNull}}"/>
+                                        </Border>
+                                        <TextBlock Text="{Binding DisplayName}"
+                                                   TextAlignment="Center"
+                                                   TextWrapping="Wrap"
+                                                   FontSize="11"
+                                                   MaxHeight="40"/>
+                                    </StackPanel>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+            </Border>
+
+            <Border Grid.Row="2" BorderBrush="#CCCCCC" BorderThickness="1" Margin="0,10,0,0"
+                    IsVisible="{Binding HasSelectedFile}">
+                <StackPanel Margin="10">
+                    <TextBlock Text="Selected File Details:" FontWeight="Bold" Margin="0,0,0,5"/>
+                    <TextBlock Text="{Binding SelectedFileDetails}" TextWrapping="Wrap"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </DockPanel>
+
+</Window>
