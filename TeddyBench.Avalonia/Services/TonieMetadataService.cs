@@ -80,6 +80,22 @@ namespace TeddyBench.Avalonia.Services
             return locations.FirstOrDefault(File.Exists);
         }
 
+        private string ReverseByteOrder(string hexString)
+        {
+            // Reverse byte order: "0451ED0E" -> "0EED5104"
+            if (string.IsNullOrEmpty(hexString) || hexString.Length % 2 != 0)
+            {
+                return hexString;
+            }
+
+            string reversed = "";
+            for (int i = hexString.Length - 2; i >= 0; i -= 2)
+            {
+                reversed += hexString.Substring(i, 2);
+            }
+            return reversed;
+        }
+
         public (string title, string? imagePath) GetTonieInfo(string hash, string? rfidFolder = null)
         {
             hash = hash.ToUpperInvariant();
@@ -101,9 +117,9 @@ namespace TeddyBench.Avalonia.Services
             }
 
             // Not found in either database - create a custom entry
-            // Use RFID folder name if provided, otherwise fall back to hash
+            // The rfidFolder is in reversed byte order, so reverse it back for display
             var customTitle = !string.IsNullOrEmpty(rfidFolder)
-                ? $"Custom Tonie [RFID: {rfidFolder}]"
+                ? $"Custom Tonie [RFID: {ReverseByteOrder(rfidFolder)}]"
                 : $"Custom Tonie [{hash.Substring(0, 8)}]";
             AddCustomTonie(hash, customTitle);
             return (customTitle, null);
@@ -118,6 +134,21 @@ namespace TeddyBench.Avalonia.Services
                 _customTonies[hash] = title;
                 _customToniesModified = true;
                 Console.WriteLine($"Added custom Tonie: {hash} = {title}");
+
+                // Save immediately
+                SaveCustomTonies();
+            }
+        }
+
+        public void RemoveCustomTonie(string hash)
+        {
+            hash = hash.ToUpperInvariant();
+
+            if (_customTonies.ContainsKey(hash))
+            {
+                _customTonies.Remove(hash);
+                _customToniesModified = true;
+                Console.WriteLine($"Removed custom Tonie: {hash}");
 
                 // Save immediately
                 SaveCustomTonies();

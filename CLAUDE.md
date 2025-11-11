@@ -75,16 +75,30 @@ TeddyBench ─────────────┘                           
 
 - **TeddyBench.Avalonia** - Cross-platform GUI application (.NET 8.0) with Avalonia UI
   - Modern MVVM architecture with CommunityToolkit.Mvvm
-  - Key features: file browsing with icon view, metadata display, decode, show info, LIVE flag management
+  - Key features: file browsing with icon view, metadata display, decode, show info, LIVE flag management, delete, custom tonie creation
   - Automatically downloads tonies.json metadata database on first run from https://api.revvox.de/tonies.json
   - Downloads and caches Tonie images from CDN (stored in cache/ directory)
   - Auto-detects Toniebox SD cards and navigates to CONTENT folder
   - Displays Tonies as icons with proper titles instead of cryptic filenames
   - Custom tonies support via customTonies.json (hash-to-title mapping for unknown tonies)
+    - Uses source folder name as tonie title (folder with most files, alphabetically first on tie)
+    - RFID stored in reverse byte order in customTonies.json for readability
+    - Format: `"FolderName [RFID: 0EED5104]"` (user-entered format, not directory format)
+  - Add Custom Tonie workflow:
+    - RFID input: 4-character user input + 4-character configurable prefix (default "0EED" in reverse byte order)
+    - Entire 8-character string editable with automatic uppercase conversion
+    - Multi-format audio file picker: MP3, OGG, FLAC, WAV, M4A, AAC, WMA
+    - Track sorting dialog with Move Up/Down buttons and multi-selection (Shift/Ctrl)
+    - Automatically uses source folder name as tonie title
+    - Creates RFID directory structure: `{reversed-uid}/500304E0`
+  - Delete functionality:
+    - Confirmation dialog before deletion
+    - Removes file, directory, and customTonies.json entry
+    - Accessible via context menu
   - Progress indication:
     - Indeterminate progress bar during directory scanning
     - Detailed status messages (directory selected, scanning, reading files with progress counter)
-    - Real-time status updates for all operations (decode, toggle LIVE flag, etc.)
+    - Real-time status updates for all operations (decode, toggle LIVE flag, encode, etc.)
   - LIVE flag management:
     - Detects and displays files with Hidden attribute (LIVE flag set by Toniebox)
     - Shows [LIVE] prefix for affected files
@@ -98,8 +112,10 @@ TeddyBench ─────────────┘                           
       - macOS: Uses `fatattr` command (same as Linux)
     - Implementation matches Windows TeddyBench behavior: single-file toggle, bulk-only-remove
   - Key services:
-    - TonieMetadataService (handles metadata and image downloads)
+    - TonieMetadataService (handles metadata, image downloads, and customTonies.json management)
     - PathToBitmapConverter (converts file paths to displayable images)
+  - Configuration via appsettings.json:
+    - RfidPrefix: 4-character prefix in reverse byte order (default "0EED" for ED0E)
   - Runs on Windows, Linux, and macOS
   - **Recommended for non-Windows users**
 
@@ -203,10 +219,15 @@ Teddy.exe -m encode -b 96 -vbr -p prefix_folder/ input_folder/
 
 **Custom Tonies (customTonies.json):**
 - Local JSON file for user-defined Tonie names
-- Simple hash-to-title dictionary format: `{ "HASH": "Custom Title" }`
+- Hash-to-title dictionary format: `{ "HASH": "FolderName [RFID: 0EED5104]" }`
 - Automatically created for unknown tonies in Avalonia app
 - Takes precedence over tonies.json entries
 - Stored in application base directory
+- TeddyBench.Avalonia format:
+  - Uses source folder name as the tonie title (folder with most files, alphabetically first on tie)
+  - RFID stored in reverse byte order for readability (user-entered format, not directory format)
+  - Example: If user enters RFID `0EED5104` and selects files from `Album Name` folder, entry becomes: `"HASH123...": "Album Name [RFID: 0EED5104]"`
+  - Directory on SD card: `0451ED0E/500304E0` (reversed)
 
 **LIVE Flag:**
 - FAT32 DOS Hidden attribute used by Toniebox to mark manually-placed files

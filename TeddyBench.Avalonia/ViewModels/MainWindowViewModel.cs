@@ -559,9 +559,25 @@ public partial class MainWindowViewModel : ViewModelBase
             // Get the sorted file paths
             string[] sortedAudioPaths = trackList.Select(t => t.FilePath).ToArray();
 
+            // Determine the folder name from source files
+            // Group files by their parent directory and count
+            var folderGroups = sortedAudioPaths
+                .Select(p => Path.GetDirectoryName(p))
+                .Where(d => !string.IsNullOrEmpty(d))
+                .GroupBy(d => d)
+                .Select(g => new { FolderPath = g.Key!, Count = g.Count() })
+                .OrderByDescending(x => x.Count)
+                .ThenBy(x => Path.GetFileName(x.FolderPath))
+                .ToList();
+
+            string sourceFolderName = folderGroups.Count > 0
+                ? Path.GetFileName(folderGroups[0].FolderPath) ?? "Custom Tonie"
+                : "Custom Tonie";
+
             StatusText = $"Encoding {sortedAudioPaths.Length} file(s)...";
             IsScanning = true;
 
+            string? generatedHash = null;
             await Task.Run(() =>
             {
                 // Step 4: Encode using TonieAudio with sorted paths
@@ -569,6 +585,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 bool useVbr = false;
 
                 TonieAudio generated = new TonieAudio(sortedAudioPaths, audioId, bitRate * 1000, useVbr, null);
+
+                // Get the hash for customTonies.json
+                generatedHash = BitConverter.ToString(generated.Header.Hash).Replace("-", "");
 
                 // Step 5: Create directory structure and save
                 // User input: 5104 + prefix 0EED = 0EED5104 -> reversed: 0451ED0E
@@ -584,6 +603,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
                 StatusText = $"Successfully created custom Tonie: {dirName}/{fileName}";
             });
+
+            // Add custom tonie entry with folder name
+            if (!string.IsNullOrEmpty(generatedHash))
+            {
+                string customTitle = $"{sourceFolderName} [RFID: {fullUid}]";
+                _metadataService.AddCustomTonie(generatedHash, customTitle);
+            }
 
             // Refresh the directory to show the new Tonie
             await ScanDirectory(CurrentDirectory);
@@ -895,6 +921,117 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         await Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private async Task DeleteSelectedTonie(TonieFileItem? file)
+    {
+        if (file == null)
+        {
+            StatusText = "Please select a file first";
+            return;
+        }
+
+        try
+        {
+            // Show confirmation dialog
+            var confirmDialog = new Window
+            {
+                Title = "Confirm Delete",
+                Width = 400,
+                Height = 200,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = false
+            };
+
+            var messageText = new TextBlock
+            {
+                Text = $"Are you sure you want to delete '{file.DisplayName}'?\n\nThis will permanently delete the file and directory from the SD card.",
+                Margin = new global::Avalonia.Thickness(10),
+                TextWrapping = global::Avalonia.Media.TextWrapping.Wrap
+            };
+
+            var yesButton = new Button { Content = "Yes", Width = 80, Margin = new global::Avalonia.Thickness(5) };
+            var noButton = new Button { Content = "No", Width = 80, Margin = new global::Avalonia.Thickness(5) };
+
+            bool? dialogResult = null;
+            yesButton.Click += (s, e) => { dialogResult = true; confirmDialog.Close(); };
+            noButton.Click += (s, e) => { dialogResult = false; confirmDialog.Close(); };
+
+            var buttonPanel = new StackPanel
+            {
+                Orientation = global::Avalonia.Layout.Orientation.Horizontal,
+                HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Center,
+                Margin = new global::Avalonia.Thickness(10)
+            };
+            buttonPanel.Children.Add(yesButton);
+            buttonPanel.Children.Add(noButton);
+
+            var mainPanel = new StackPanel { Margin = new global::Avalonia.Thickness(10) };
+            mainPanel.Children.Add(messageText);
+            mainPanel.Children.Add(buttonPanel);
+
+            confirmDialog.Content = mainPanel;
+            await confirmDialog.ShowDialog(_window);
+
+            if (dialogResult != true)
+            {
+                StatusText = "Delete cancelled";
+                return;
+            }
+
+            // Read the hash before deleting (if possible)
+            string? hash = null;
+            try
+            {
+                var audio = TonieAudio.FromFile(file.FilePath, false);
+                hash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not read hash from file before deleting: {ex.Message}");
+            }
+
+            // Delete the file and directory
+            var fileInfo = new FileInfo(file.FilePath);
+            var directory = fileInfo.Directory;
+
+            StatusText = $"Deleting {file.FileName}...";
+
+            fileInfo.Delete();
+
+            if (directory != null && directory.Exists)
+            {
+                // Delete the directory if it's empty or force delete
+                try
+                {
+                    directory.Delete(true); // true = recursive delete
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Could not delete directory {directory.FullName}: {ex.Message}");
+                }
+            }
+
+            // Remove from customTonies.json if we got the hash
+            if (!string.IsNullOrEmpty(hash))
+            {
+                _metadataService.RemoveCustomTonie(hash);
+            }
+
+            StatusText = $"Successfully deleted {file.DisplayName}";
+
+            // Refresh the directory to update the view
+            if (!string.IsNullOrEmpty(CurrentDirectory))
+            {
+                await ScanDirectory(CurrentDirectory);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error deleting file: {ex.Message}";
+            Console.WriteLine($"Error: {ex}");
+        }
     }
 
     [RelayCommand]

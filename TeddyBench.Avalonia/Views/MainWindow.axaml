@@ -118,6 +118,10 @@
                                             <MenuItem Header="Show Info"
                                                       Command="{Binding $parent[Window].DataContext.ShowTonieInfoCommand}"
                                                       CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                            <Separator/>
+                                            <MenuItem Header="Delete"
+                                                      Command="{Binding $parent[Window].DataContext.DeleteSelectedTonieCommand}"
+                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
                                         </ContextMenu>
                                     </Button.ContextMenu>
                                     <StackPanel Width="120" Spacing="5">
