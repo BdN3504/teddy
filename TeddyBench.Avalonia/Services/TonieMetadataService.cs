@@ -80,7 +80,7 @@ namespace TeddyBench.Avalonia.Services
             return locations.FirstOrDefault(File.Exists);
         }
 
-        public (string title, string? imagePath) GetTonieInfo(string hash)
+        public (string title, string? imagePath) GetTonieInfo(string hash, string? rfidFolder = null)
         {
             hash = hash.ToUpperInvariant();
 
@@ -101,7 +101,10 @@ namespace TeddyBench.Avalonia.Services
             }
 
             // Not found in either database - create a custom entry
-            var customTitle = $"Custom Tonie [{hash.Substring(0, 8)}]";
+            // Use RFID folder name if provided, otherwise fall back to hash
+            var customTitle = !string.IsNullOrEmpty(rfidFolder)
+                ? $"Custom Tonie [RFID: {rfidFolder}]"
+                : $"Custom Tonie [{hash.Substring(0, 8)}]";
             AddCustomTonie(hash, customTitle);
             return (customTitle, null);
         }

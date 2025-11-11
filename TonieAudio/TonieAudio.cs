@@ -317,11 +317,20 @@ namespace TonieFile
         {
             foreach (var source in sources)
             {
-                string item = source.Trim('"').Trim(Path.DirectorySeparatorChar);
+                // Remove quotes and only trim trailing directory separators (not leading ones)
+                string item = source.Trim('"').TrimEnd(Path.DirectorySeparatorChar);
 
                 if (Directory.Exists(item))
                 {
-                    var filesInDir = Directory.GetFiles(item, "*.mp3").Concat(Directory.GetFiles(item, "*.ogg")).OrderBy(n => n).ToArray();
+                    // Support common audio formats: MP3, OGG, FLAC, WAV, M4A, AAC, WMA
+                    var filesInDir = Directory.GetFiles(item, "*.mp3")
+                        .Concat(Directory.GetFiles(item, "*.ogg"))
+                        .Concat(Directory.GetFiles(item, "*.flac"))
+                        .Concat(Directory.GetFiles(item, "*.wav"))
+                        .Concat(Directory.GetFiles(item, "*.m4a"))
+                        .Concat(Directory.GetFiles(item, "*.aac"))
+                        .Concat(Directory.GetFiles(item, "*.wma"))
+                        .OrderBy(n => n).ToArray();
                     string[] sourceFiles = filesInDir;
                     bool failed = false;
 
@@ -356,9 +365,15 @@ namespace TonieFile
                 }
                 else if (File.Exists(item))
                 {
-                    if (!(item.ToLower().EndsWith(".mp3") || item.ToLower().EndsWith(".ogg")))
+                    string lower = item.ToLower();
+                    bool isSupported = lower.EndsWith(".mp3") || lower.EndsWith(".ogg") ||
+                                      lower.EndsWith(".flac") || lower.EndsWith(".wav") ||
+                                      lower.EndsWith(".m4a") || lower.EndsWith(".aac") ||
+                                      lower.EndsWith(".wma");
+
+                    if (!isSupported)
                     {
-                        throw new InvalidDataException("Specified item '" + item + "' is no MP3/Ogg");
+                        throw new InvalidDataException("Specified item '" + item + "' is not a supported audio format");
                     }
                     FileList.Add(item);
                 }
@@ -501,7 +516,7 @@ namespace TonieFile
 
                             try
                             {
-                                var prefixStream = new Mp3FileReader(prefixFile);
+                                var prefixStream = new CrossPlatformAudioReader(prefixFile);
                                 var prefixResampled = new CrossPlatformResampler(prefixStream, outFormat);
 
                                 while (true)
@@ -539,13 +554,24 @@ namespace TonieFile
 
                         switch (type)
                         {
-                            case "mp3":
-                                stream = new Mp3FileReader(sourceFile);
-                                break;
-
                             case "ogg":
+                                // Use OpusWaveStream for Ogg files (more efficient for Opus-encoded files)
                                 stream = new OpusWaveStream(File.Open(sourceFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite), bitRate, channels);
                                 break;
+
+                            case "mp3":
+                            case "flac":
+                            case "wav":
+                            case "m4a":
+                            case "aac":
+                            case "wma":
+                                // Use CrossPlatformAudioReader for all other formats
+                                stream = new CrossPlatformAudioReader(sourceFile);
+                                break;
+
+                            default:
+                                cbr.FileFailed("Unsupported file type: " + type);
+                                continue;
                         }
 
                         if(stream == null)
@@ -606,9 +632,9 @@ namespace TonieFile
                     }
                     catch (Exception e)
                     {
-                        string msg = "Failed processing " + sourceFile;
+                        string msg = "Failed processing " + sourceFile + ": " + e.Message;
                         cbr.Failed(msg);
-                        throw new Exception(msg);
+                        throw new Exception(msg, e);
                     }
 
                     if (!warned && outputData.Length >= maxSize / 2)

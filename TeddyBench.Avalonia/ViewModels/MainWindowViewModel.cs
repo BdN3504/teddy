@@ -3,6 +3,7 @@ using Avalonia.Platform.Storage;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.IO;
 using System.Linq;
@@ -72,6 +73,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _selectedFileDetails = string.Empty;
 
     public bool HasSelectedFile => SelectedFile != null;
+    public bool HasValidDirectory => !string.IsNullOrEmpty(CurrentDirectory);
 
     partial void OnSelectedFileChanged(TonieFileItem? value)
     {
@@ -80,6 +82,11 @@ public partial class MainWindowViewModel : ViewModelBase
             UpdateSelectedFileDetails(value);
         }
         OnPropertyChanged(nameof(HasSelectedFile));
+    }
+
+    partial void OnCurrentDirectoryChanged(string? value)
+    {
+        OnPropertyChanged(nameof(HasValidDirectory));
     }
 
     [RelayCommand]
@@ -139,17 +146,66 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            // Step 1: Get Audio ID from user
+            // Load RFID prefix from config file (4 characters in reverse byte order)
+            string rfidPrefix = "0EED"; // Default value (ED0E reversed)
+            try
+            {
+                var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+                if (File.Exists(configPath))
+                {
+                    var configJson = File.ReadAllText(configPath);
+                    var config = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, string>>(configJson);
+                    if (config != null && config.ContainsKey("RfidPrefix"))
+                    {
+                        rfidPrefix = config["RfidPrefix"];
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Could not load RFID prefix from config, using default '0EED': {ex.Message}");
+            }
+
+            // Step 1: Get RFID UID from user (8 characters, pre-filled with prefix but editable)
             var audioIdDialog = new Window
             {
-                Title = "Enter Audio ID",
-                Width = 500,
-                Height = 200,
+                Title = "Enter RFID Tag UID",
+                Width = 550,
+                Height = 280,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 CanResize = false
             };
 
-            var audioIdInput = new TextBox { Watermark = "Enter 16-character hex Audio ID (or leave empty to auto-generate)", Margin = new global::Avalonia.Thickness(10) };
+            // Pre-fill the text box with the prefix, cursor positioned at the end
+            var audioIdInput = new TextBox
+            {
+                Text = rfidPrefix,
+                Watermark = "e.g., 0EED5104",
+                Margin = new global::Avalonia.Thickness(10)
+            };
+
+            // Automatically convert input to uppercase as user types
+            audioIdInput.TextChanged += (s, e) =>
+            {
+                if (audioIdInput.Text != null)
+                {
+                    var currentPos = audioIdInput.CaretIndex;
+                    var upperText = audioIdInput.Text.ToUpper();
+                    if (audioIdInput.Text != upperText)
+                    {
+                        audioIdInput.Text = upperText;
+                        audioIdInput.CaretIndex = currentPos;
+                    }
+                }
+            };
+
+            // Set cursor to end of text when dialog opens
+            audioIdInput.AttachedToVisualTree += (s, e) =>
+            {
+                audioIdInput.CaretIndex = audioIdInput.Text?.Length ?? 0;
+                audioIdInput.Focus();
+            };
+
             var okButton = new Button { Content = "OK", Width = 80, HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Center };
             var cancelButton = new Button { Content = "Cancel", Width = 80, HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Center, Margin = new global::Avalonia.Thickness(10, 0, 0, 0) };
 
@@ -161,8 +217,19 @@ public partial class MainWindowViewModel : ViewModelBase
             buttonPanel.Children.Add(okButton);
             buttonPanel.Children.Add(cancelButton);
 
-            var mainPanel = new StackPanel();
-            mainPanel.Children.Add(new TextBlock { Text = "Audio ID (16 hex characters, e.g. E00403500EED5104):", Margin = new global::Avalonia.Thickness(10, 10, 10, 5) });
+            var mainPanel = new StackPanel { Margin = new global::Avalonia.Thickness(10) };
+            mainPanel.Children.Add(new TextBlock
+            {
+                Text = "Enter the RFID UID from your Tonie figurine:",
+                Margin = new global::Avalonia.Thickness(0, 0, 0, 5),
+                FontWeight = global::Avalonia.Media.FontWeight.Bold
+            });
+            mainPanel.Children.Add(new TextBlock
+            {
+                Text = $"• The prefix '{rfidPrefix}' (in reverse byte order) is pre-filled\n• Complete the UID by adding the last 4 characters (e.g., 5104)\n• You can edit the entire 8-character string if needed\n• You can read the UID from the RFID tag using an NFC reader\n• The UID must match the physical figurine for the Toniebox to recognize it",
+                Margin = new global::Avalonia.Thickness(0, 0, 0, 10),
+                TextWrapping = global::Avalonia.Media.TextWrapping.Wrap
+            });
             mainPanel.Children.Add(audioIdInput);
             mainPanel.Children.Add(buttonPanel);
 
@@ -175,43 +242,52 @@ public partial class MainWindowViewModel : ViewModelBase
                 return;
             }
 
-            // Generate or parse Audio ID
-            uint audioId;
-            string audioIdHex;
+            // Parse RFID UID
+            string uidInput = audioIdInput.Text?.Replace(" ", "").Replace(":", "").ToUpper() ?? "";
 
-            if (string.IsNullOrWhiteSpace(audioIdInput.Text))
+            if (string.IsNullOrWhiteSpace(uidInput))
             {
-                // Auto-generate from timestamp
-                audioId = (uint)DateTimeOffset.Now.ToUnixTimeSeconds() - 0x50000000;
-                audioIdHex = audioId.ToString("X8");
-                StatusText = $"Auto-generated Audio ID: 0x{audioIdHex}";
+                StatusText = "Error: RFID UID is required (must match RFID tag on figurine)";
+                return;
             }
-            else
-            {
-                audioIdHex = audioIdInput.Text.Replace("0x", "").Replace(" ", "").ToUpper();
-                if (audioIdHex.Length != 16 || !System.Text.RegularExpressions.Regex.IsMatch(audioIdHex, "^[0-9A-F]{16}$"))
-                {
-                    StatusText = "Error: Audio ID must be exactly 16 hexadecimal characters";
-                    return;
-                }
 
-                // Parse first 8 characters as the audio ID
-                if (!uint.TryParse(audioIdHex.Substring(8, 8), System.Globalization.NumberStyles.HexNumber, null, out audioId))
-                {
-                    StatusText = "Error: Invalid Audio ID format";
-                    return;
-                }
+            if (uidInput.Length != 8 || !System.Text.RegularExpressions.Regex.IsMatch(uidInput, "^[0-9A-F]{8}$"))
+            {
+                StatusText = "Error: RFID UID must be exactly 8 hexadecimal characters";
+                return;
+            }
+
+            // User entered the full 8-character UID (prefix already included)
+            // Example: uidInput="0EED5104" (user added "5104" to pre-filled "0EED")
+            // Reverse bytes: "0EED5104" -> "04 51 ED 0E" -> "0451ED0E"
+            string fullUid = uidInput; // "0EED5104"
+
+            // Reverse byte order (every 2 characters)
+            string reversedUid = "";
+            for (int i = fullUid.Length - 2; i >= 0; i -= 2)
+            {
+                reversedUid += fullUid.Substring(i, 2);
+            }
+            // reversedUid is now "0451ED0E"
+
+            // Parse as audio ID for TonieAudio constructor (last 4 bytes = last 8 hex chars of full RFID)
+            uint audioId;
+            string fullRfidWithSuffix = reversedUid + "500304E0";
+            if (!uint.TryParse(fullRfidWithSuffix.Substring(8, 8), System.Globalization.NumberStyles.HexNumber, null, out audioId))
+            {
+                StatusText = "Error: Invalid RFID UID format";
+                return;
             }
 
             // Step 2: Select audio files
             var storageProvider = _window.StorageProvider;
             var filePickerOptions = new FilePickerOpenOptions
             {
-                Title = "Select Audio Files (MP3 or OGG)",
+                Title = "Select Audio Files",
                 AllowMultiple = true,
                 FileTypeFilter = new[]
                 {
-                    new FilePickerFileType("Audio Files") { Patterns = new[] { "*.mp3", "*.ogg" } },
+                    new FilePickerFileType("Audio Files") { Patterns = new[] { "*.mp3", "*.ogg", "*.flac", "*.wav", "*.m4a", "*.aac", "*.wma" } },
                     new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
                 }
             };
@@ -224,24 +300,281 @@ public partial class MainWindowViewModel : ViewModelBase
                 return;
             }
 
-            string[] audioPaths = selectedFiles.Select(f => f.TryGetLocalPath()).Where(p => !string.IsNullOrEmpty(p)).ToArray()!;
+            // Fix file paths - ensure they start with '/' on Linux
+            string[] audioPaths = selectedFiles
+                .Select(f => f.TryGetLocalPath())
+                .Where(p => !string.IsNullOrEmpty(p))
+                .Select(p =>
+                {
+                    // On Linux, TryGetLocalPath() sometimes returns paths without leading '/'
+                    if (OperatingSystem.IsLinux() && !p!.StartsWith("/"))
+                    {
+                        return "/" + p;
+                    }
+                    return p!;
+                })
+                .ToArray();
 
-            StatusText = $"Encoding {audioPaths.Length} file(s)...";
+            // Step 3: Show track sorting dialog
+            var trackList = new ObservableCollection<AudioTrackItem>();
+
+            // Sort by filename initially
+            var sortedPaths = audioPaths.OrderBy(p => Path.GetFileName(p)).ToArray();
+            for (int i = 0; i < sortedPaths.Length; i++)
+            {
+                trackList.Add(new AudioTrackItem
+                {
+                    TrackNumber = i + 1,
+                    FileName = Path.GetFileName(sortedPaths[i]),
+                    FilePath = sortedPaths[i]
+                });
+            }
+
+            var sortDialog = new Window
+            {
+                Title = "Sort Your Tracks",
+                Width = 700,
+                Height = 500,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = true
+            };
+
+            var trackListBox = new ListBox
+            {
+                ItemsSource = trackList,
+                SelectionMode = SelectionMode.Multiple,
+                Margin = new global::Avalonia.Thickness(10)
+            };
+
+            // Create template for ListBox items - show track number and filename
+            var itemTemplate = new global::Avalonia.Controls.Templates.FuncDataTemplate<AudioTrackItem>((track, _) =>
+            {
+                // Null check to prevent crashes during ObservableCollection updates
+                if (track == null)
+                    return new TextBlock { Text = "" };
+
+                var panel = new StackPanel { Orientation = global::Avalonia.Layout.Orientation.Horizontal };
+                panel.Children.Add(new TextBlock
+                {
+                    Text = $"{track.TrackNumber}. ",
+                    Width = 40,
+                    FontWeight = global::Avalonia.Media.FontWeight.Bold
+                });
+                panel.Children.Add(new TextBlock
+                {
+                    Text = track.FileName,
+                    TextTrimming = global::Avalonia.Media.TextTrimming.CharacterEllipsis
+                });
+                return panel;
+            });
+            trackListBox.ItemTemplate = itemTemplate;
+
+            bool canMoveUp = false;
+            bool canMoveDown = false;
+
+            var btnMoveUp = new Button
+            {
+                Content = "Move Up",
+                Width = 100,
+                Margin = new global::Avalonia.Thickness(5),
+                IsEnabled = false
+            };
+
+            var btnMoveDown = new Button
+            {
+                Content = "Move Down",
+                Width = 100,
+                Margin = new global::Avalonia.Thickness(5),
+                IsEnabled = false
+            };
+
+            // Update button states when selection changes
+            trackListBox.SelectionChanged += (s, e) =>
+            {
+                var selectedIndices = trackListBox.SelectedItems.Cast<AudioTrackItem>()
+                    .Select(t => trackList.IndexOf(t))
+                    .OrderBy(i => i)
+                    .ToList();
+
+                canMoveUp = selectedIndices.Count > 0 && selectedIndices[0] > 0;
+                canMoveDown = selectedIndices.Count > 0 && selectedIndices[selectedIndices.Count - 1] < trackList.Count - 1;
+
+                btnMoveUp.IsEnabled = canMoveUp;
+                btnMoveDown.IsEnabled = canMoveDown;
+            };
+
+            // Move Up button click handler
+            btnMoveUp.Click += (s, e) =>
+            {
+                var selectedIndices = trackListBox.SelectedItems.Cast<AudioTrackItem>()
+                    .Select(t => trackList.IndexOf(t))
+                    .OrderBy(i => i)
+                    .ToList();
+
+                if (selectedIndices.Count == 0 || selectedIndices[0] == 0)
+                    return;
+
+                var selectedItems = selectedIndices.Select(i => trackList[i]).ToList();
+
+                for (int i = 0; i < selectedIndices.Count; i++)
+                {
+                    int index = selectedIndices[i];
+                    if (index > 0)
+                    {
+                        var item = trackList[index];
+                        trackList.RemoveAt(index);
+                        trackList.Insert(index - 1, item);
+                    }
+                }
+
+                // Update track numbers
+                for (int i = 0; i < trackList.Count; i++)
+                {
+                    trackList[i].TrackNumber = i + 1;
+                }
+
+                // Restore selection
+                trackListBox.SelectedItems.Clear();
+                foreach (var item in selectedItems)
+                {
+                    trackListBox.SelectedItems.Add(item);
+                }
+            };
+
+            // Move Down button click handler
+            btnMoveDown.Click += (s, e) =>
+            {
+                var selectedIndices = trackListBox.SelectedItems.Cast<AudioTrackItem>()
+                    .Select(t => trackList.IndexOf(t))
+                    .OrderByDescending(i => i)
+                    .ToList();
+
+                if (selectedIndices.Count == 0 || selectedIndices[0] == trackList.Count - 1)
+                    return;
+
+                var selectedItems = selectedIndices.Select(i => trackList[i]).ToList();
+
+                for (int i = 0; i < selectedIndices.Count; i++)
+                {
+                    int index = selectedIndices[i];
+                    if (index < trackList.Count - 1)
+                    {
+                        var item = trackList[index];
+                        trackList.RemoveAt(index);
+                        trackList.Insert(index + 1, item);
+                    }
+                }
+
+                // Update track numbers
+                for (int i = 0; i < trackList.Count; i++)
+                {
+                    trackList[i].TrackNumber = i + 1;
+                }
+
+                // Restore selection
+                trackListBox.SelectedItems.Clear();
+                foreach (var item in selectedItems)
+                {
+                    trackListBox.SelectedItems.Add(item);
+                }
+            };
+
+            var btnOk = new Button
+            {
+                Content = "Encode",
+                Width = 100,
+                Margin = new global::Avalonia.Thickness(5),
+                HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Right
+            };
+
+            var btnCancel = new Button
+            {
+                Content = "Cancel",
+                Width = 100,
+                Margin = new global::Avalonia.Thickness(5),
+                HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Right
+            };
+
+            bool? sortDialogResult = null;
+            btnOk.Click += (s, e) => { sortDialogResult = true; sortDialog.Close(); };
+            btnCancel.Click += (s, e) => { sortDialogResult = false; sortDialog.Close(); };
+
+            // Layout
+            var moveButtonPanel = new StackPanel
+            {
+                Orientation = global::Avalonia.Layout.Orientation.Vertical,
+                VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Top,
+                Margin = new global::Avalonia.Thickness(10)
+            };
+            moveButtonPanel.Children.Add(btnMoveUp);
+            moveButtonPanel.Children.Add(btnMoveDown);
+
+            var bottomPanel = new StackPanel
+            {
+                Orientation = global::Avalonia.Layout.Orientation.Horizontal,
+                HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Right,
+                Margin = new global::Avalonia.Thickness(10)
+            };
+            bottomPanel.Children.Add(btnOk);
+            bottomPanel.Children.Add(btnCancel);
+
+            var contentGrid = new Grid
+            {
+                RowDefinitions = new global::Avalonia.Controls.RowDefinitions("Auto,*,Auto")
+            };
+
+            var headerText = new TextBlock
+            {
+                Text = "Reorder tracks using the Up/Down buttons. Multi-select with Ctrl or Shift.",
+                Margin = new global::Avalonia.Thickness(10),
+                FontWeight = global::Avalonia.Media.FontWeight.Bold
+            };
+            Grid.SetRow(headerText, 0);
+
+            var middleGrid = new Grid
+            {
+                ColumnDefinitions = new global::Avalonia.Controls.ColumnDefinitions("*,Auto")
+            };
+            Grid.SetRow(middleGrid, 1);
+            Grid.SetColumn(trackListBox, 0);
+            Grid.SetColumn(moveButtonPanel, 1);
+            middleGrid.Children.Add(trackListBox);
+            middleGrid.Children.Add(moveButtonPanel);
+
+            Grid.SetRow(bottomPanel, 2);
+
+            contentGrid.Children.Add(headerText);
+            contentGrid.Children.Add(middleGrid);
+            contentGrid.Children.Add(bottomPanel);
+
+            sortDialog.Content = contentGrid;
+            await sortDialog.ShowDialog(_window);
+
+            if (sortDialogResult != true)
+            {
+                StatusText = "Operation cancelled";
+                return;
+            }
+
+            // Get the sorted file paths
+            string[] sortedAudioPaths = trackList.Select(t => t.FilePath).ToArray();
+
+            StatusText = $"Encoding {sortedAudioPaths.Length} file(s)...";
             IsScanning = true;
 
             await Task.Run(() =>
             {
-                // Step 3: Encode using TonieAudio
+                // Step 4: Encode using TonieAudio with sorted paths
                 int bitRate = 96; // Default bitrate
                 bool useVbr = false;
 
-                TonieAudio generated = new TonieAudio(audioPaths, audioId, bitRate * 1000, useVbr, null);
+                TonieAudio generated = new TonieAudio(sortedAudioPaths, audioId, bitRate * 1000, useVbr, null);
 
-                // Step 4: Create directory structure and save
-                // AudioID format: E00403500EED5104 -> Directory: E0040350, File: 0EED51040304E0
-                string dirName = audioIdHex.Substring(0, 8);
-                string filePrefix = audioIdHex.Substring(8, 8);
-                string fileName = filePrefix + "0304E0";
+                // Step 5: Create directory structure and save
+                // User input: 5104 + prefix 0EED = 0EED5104 -> reversed: 0451ED0E
+                // Directory: 0451ED0E, File: 500304E0 (constant suffix)
+                string dirName = reversedUid;
+                string fileName = "500304E0";
 
                 string targetDir = Path.Combine(CurrentDirectory, dirName);
                 Directory.CreateDirectory(targetDir);
@@ -687,7 +1020,8 @@ public partial class MainWindowViewModel : ViewModelBase
                     {
                         var audio = TonieAudio.FromFile(file.FullName, false);
                         var hash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
-                        var (metaTitle, metaImage) = _metadataService.GetTonieInfo(hash);
+                        // Pass the RFID folder name (subDir.Name) so custom tonies show the RFID instead of hash
+                        var (metaTitle, metaImage) = _metadataService.GetTonieInfo(hash, subDir.Name);
 
                         if (!string.IsNullOrEmpty(metaTitle) && metaTitle != "Unknown Tonie")
                         {
@@ -828,6 +1162,21 @@ public partial class TonieFileItem : ObservableObject
 
     [ObservableProperty]
     private bool _isLive;
+
+    [ObservableProperty]
+    private bool _isSelected;
+}
+
+public partial class AudioTrackItem : ObservableObject
+{
+    [ObservableProperty]
+    private int _trackNumber;
+
+    [ObservableProperty]
+    private string _fileName = string.Empty;
+
+    [ObservableProperty]
+    private string _filePath = string.Empty;
 
     [ObservableProperty]
     private bool _isSelected;

@@ -64,8 +64,9 @@ TeddyBench ─────────────┘                           
 
 **Core Projects:**
 - **TonieAudio** - Core library (.NET 8.0) containing the main logic for encoding/decoding Tonie files
-  - Key classes: `TonieAudio` (main file operations), `TonieTools` (utilities), `ProtoCoder` (protobuf serialization), `CrossPlatformResampler` (audio resampling)
+  - Key classes: `TonieAudio` (main file operations), `TonieTools` (utilities), `ProtoCoder` (protobuf serialization), `CrossPlatformResampler` (audio resampling), `CrossPlatformAudioReader` (multi-format audio decoding)
   - Dependencies: NAudio, Concentus, Concentus.Oggfile, ID3, FFMpegCore
+  - Supports multiple input audio formats: MP3, OGG, FLAC, WAV, M4A, AAC, WMA
 
 - **Teddy** - Console application (.NET 8.0) providing cross-platform CLI interface
   - Entry point: `Teddy/Program.cs`
@@ -139,13 +140,17 @@ Tonie files use a custom binary format:
 - `ParsePositions()` - Calculate chapter positions from granule information
 
 **Command-Line Operations (Program.cs):**
-- `encode` - Create Tonie file from MP3/Ogg files
+- `encode` - Create Tonie file from audio files (supports MP3, OGG, FLAC, WAV, M4A, AAC, WMA)
 - `decode` - Extract audio from Tonie file to Ogg format
 - `info` - Display Tonie file metadata (supports text/CSV/JSON output)
 - `rename` - Organize Tonie files using metadata from JSON database
 
 **Audio Encoding:**
-- Reads MP3 or Ogg files as input
+- Accepts multiple audio formats as input: MP3, OGG, FLAC, WAV, M4A, AAC, WMA
+- Decodes audio using `CrossPlatformAudioReader`:
+  - Windows: Uses NAudio's Mp3FileReader for MP3 (efficient), FFmpeg for all other formats
+  - Linux/macOS: Uses FFmpeg for all formats (requires `ffmpeg` binary installed)
+  - Special case: Ogg files use OpusWaveStream directly (most efficient for Opus-encoded files)
 - Resamples to 48kHz stereo using `CrossPlatformResampler`:
   - Windows: Uses MediaFoundationResampler (native)
   - Linux/macOS: Uses FFmpeg (requires `ffmpeg` binary installed)
@@ -164,7 +169,7 @@ Teddy.exe -m info <toniefile>
 # Decode Tonie file to audio files
 Teddy.exe -m decode -o <output_dir> <toniefile>
 
-# Encode MP3/Ogg files to Tonie format
+# Encode audio files to Tonie format (supports MP3, OGG, FLAC, WAV, M4A, AAC, WMA)
 Teddy.exe -m encode -o <output_file> -b 96 <folder_or_files>
 
 # Encode with custom Audio ID
