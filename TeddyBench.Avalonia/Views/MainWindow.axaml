@@ -9,7 +9,9 @@
         x:DataType="vm:MainWindowViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="TeddyBench - Cross-platform Tonie File Manager"
-        Width="1200" Height="800">
+        Width="1200" Height="800"
+        CanResize="True"
+        WindowStartupLocation="CenterScreen">
 
     <Window.Resources>
         <converters:PathToBitmapConverter x:Key="PathToBitmapConverter"/>
@@ -27,7 +29,7 @@
                 <MenuItem Header="E_xit" Command="{Binding ExitCommand}"/>
             </MenuItem>
             <MenuItem Header="_Operations">
-                <MenuItem Header="_Encode Files..." Command="{Binding EncodeFilesCommand}"/>
+                <MenuItem Header="_Add Custom Tonie..." Command="{Binding AddCustomTonieCommand}"/>
                 <MenuItem Header="_Decode Selected" Command="{Binding DecodeSelectedCommand}"/>
                 <MenuItem Header="Show _Info" Command="{Binding ShowInfoCommand}"/>
             </MenuItem>
@@ -61,6 +63,7 @@
 
             <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
                 <Button Command="{Binding OpenDirectoryCommand}" Content="Open Directory"/>
+                <Button Command="{Binding AddCustomTonieCommand}" Content="Add Custom Tonie"/>
                 <Button Command="{Binding DecodeSelectedCommand}" Content="Decode Selected"/>
                 <Button Command="{Binding ShowInfoCommand}" Content="Show Info"/>
                 <Button Command="{Binding RefreshCommand}" Content="Refresh"/>
@@ -80,11 +83,29 @@
                                 <Button Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).SelectTonieCommand}"
                                         CommandParameter="{Binding}"
                                         Tag="{Binding}"
-                                        Background="Transparent"
-                                        BorderThickness="0"
+                                        Classes.selected="{Binding IsSelected}"
+                                        BorderThickness="2"
                                         Padding="5"
                                         Margin="5"
                                         Name="TonieButton">
+                                    <Button.Styles>
+                                        <Style Selector="Button">
+                                            <Setter Property="Background" Value="Transparent"/>
+                                            <Setter Property="BorderBrush" Value="Transparent"/>
+                                        </Style>
+                                        <Style Selector="Button.selected /template/ ContentPresenter">
+                                            <Setter Property="Background" Value="#F0F0F0"/>
+                                        </Style>
+                                        <Style Selector="Button.selected TextBlock">
+                                            <Setter Property="Foreground" Value="#000000"/>
+                                        </Style>
+                                        <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                            <Setter Property="Background" Value="#F0F0F0"/>
+                                        </Style>
+                                        <Style Selector="Button:pointerover TextBlock">
+                                            <Setter Property="Foreground" Value="#000000"/>
+                                        </Style>
+                                    </Button.Styles>
                                     <Button.ContextMenu>
                                         <ContextMenu Opened="ContextMenu_Opened">
                                             <MenuItem Header="Toggle LIVE Flag"

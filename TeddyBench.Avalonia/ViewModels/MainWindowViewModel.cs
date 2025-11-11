@@ -129,12 +129,141 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task EncodeFiles()
+    private async Task AddCustomTonie()
     {
-        StatusText = "Encode feature - use CLI for now: dotnet Teddy.dll -m encode";
-        // This would open a file picker and encode dialog
-        // Implementation would use TonieAudio class
-        await Task.CompletedTask;
+        if (string.IsNullOrEmpty(CurrentDirectory))
+        {
+            StatusText = "Please open a directory first (must be Toniebox SD card CONTENT folder)";
+            return;
+        }
+
+        try
+        {
+            // Step 1: Get Audio ID from user
+            var audioIdDialog = new Window
+            {
+                Title = "Enter Audio ID",
+                Width = 500,
+                Height = 200,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = false
+            };
+
+            var audioIdInput = new TextBox { Watermark = "Enter 16-character hex Audio ID (or leave empty to auto-generate)", Margin = new global::Avalonia.Thickness(10) };
+            var okButton = new Button { Content = "OK", Width = 80, HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Center };
+            var cancelButton = new Button { Content = "Cancel", Width = 80, HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Center, Margin = new global::Avalonia.Thickness(10, 0, 0, 0) };
+
+            bool? dialogResult = null;
+            okButton.Click += (s, e) => { dialogResult = true; audioIdDialog.Close(); };
+            cancelButton.Click += (s, e) => { dialogResult = false; audioIdDialog.Close(); };
+
+            var buttonPanel = new StackPanel { Orientation = global::Avalonia.Layout.Orientation.Horizontal, HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Center, Margin = new global::Avalonia.Thickness(10) };
+            buttonPanel.Children.Add(okButton);
+            buttonPanel.Children.Add(cancelButton);
+
+            var mainPanel = new StackPanel();
+            mainPanel.Children.Add(new TextBlock { Text = "Audio ID (16 hex characters, e.g. E00403500EED5104):", Margin = new global::Avalonia.Thickness(10, 10, 10, 5) });
+            mainPanel.Children.Add(audioIdInput);
+            mainPanel.Children.Add(buttonPanel);
+
+            audioIdDialog.Content = mainPanel;
+            await audioIdDialog.ShowDialog(_window);
+
+            if (dialogResult != true)
+            {
+                StatusText = "Operation cancelled";
+                return;
+            }
+
+            // Generate or parse Audio ID
+            uint audioId;
+            string audioIdHex;
+
+            if (string.IsNullOrWhiteSpace(audioIdInput.Text))
+            {
+                // Auto-generate from timestamp
+                audioId = (uint)DateTimeOffset.Now.ToUnixTimeSeconds() - 0x50000000;
+                audioIdHex = audioId.ToString("X8");
+                StatusText = $"Auto-generated Audio ID: 0x{audioIdHex}";
+            }
+            else
+            {
+                audioIdHex = audioIdInput.Text.Replace("0x", "").Replace(" ", "").ToUpper();
+                if (audioIdHex.Length != 16 || !System.Text.RegularExpressions.Regex.IsMatch(audioIdHex, "^[0-9A-F]{16}$"))
+                {
+                    StatusText = "Error: Audio ID must be exactly 16 hexadecimal characters";
+                    return;
+                }
+
+                // Parse first 8 characters as the audio ID
+                if (!uint.TryParse(audioIdHex.Substring(8, 8), System.Globalization.NumberStyles.HexNumber, null, out audioId))
+                {
+                    StatusText = "Error: Invalid Audio ID format";
+                    return;
+                }
+            }
+
+            // Step 2: Select audio files
+            var storageProvider = _window.StorageProvider;
+            var filePickerOptions = new FilePickerOpenOptions
+            {
+                Title = "Select Audio Files (MP3 or OGG)",
+                AllowMultiple = true,
+                FileTypeFilter = new[]
+                {
+                    new FilePickerFileType("Audio Files") { Patterns = new[] { "*.mp3", "*.ogg" } },
+                    new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                }
+            };
+
+            var selectedFiles = await storageProvider.OpenFilePickerAsync(filePickerOptions);
+
+            if (selectedFiles.Count == 0)
+            {
+                StatusText = "No audio files selected";
+                return;
+            }
+
+            string[] audioPaths = selectedFiles.Select(f => f.TryGetLocalPath()).Where(p => !string.IsNullOrEmpty(p)).ToArray()!;
+
+            StatusText = $"Encoding {audioPaths.Length} file(s)...";
+            IsScanning = true;
+
+            await Task.Run(() =>
+            {
+                // Step 3: Encode using TonieAudio
+                int bitRate = 96; // Default bitrate
+                bool useVbr = false;
+
+                TonieAudio generated = new TonieAudio(audioPaths, audioId, bitRate * 1000, useVbr, null);
+
+                // Step 4: Create directory structure and save
+                // AudioID format: E00403500EED5104 -> Directory: E0040350, File: 0EED51040304E0
+                string dirName = audioIdHex.Substring(0, 8);
+                string filePrefix = audioIdHex.Substring(8, 8);
+                string fileName = filePrefix + "0304E0";
+
+                string targetDir = Path.Combine(CurrentDirectory, dirName);
+                Directory.CreateDirectory(targetDir);
+
+                string targetFile = Path.Combine(targetDir, fileName);
+                File.WriteAllBytes(targetFile, generated.FileContent);
+
+                StatusText = $"Successfully created custom Tonie: {dirName}/{fileName}";
+            });
+
+            // Refresh the directory to show the new Tonie
+            await ScanDirectory(CurrentDirectory);
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error creating custom Tonie: {ex.Message}";
+            Console.WriteLine($"Error: {ex}");
+        }
+        finally
+        {
+            IsScanning = false;
+        }
     }
 
     [RelayCommand]
@@ -221,6 +350,14 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void SelectTonie(TonieFileItem item)
     {
+        // Deselect all items
+        foreach (var tonieFile in TonieFiles)
+        {
+            tonieFile.IsSelected = false;
+        }
+
+        // Select the clicked item
+        item.IsSelected = true;
         SelectedFile = item;
     }
 
@@ -445,33 +582,33 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 filesProcessed++;
 
+                // Skip files that aren't marked as LIVE - they can't have the flag
+                // (Official tonies from database are never LIVE, only custom files)
+                if (!tonieFile.IsLive)
+                {
+                    continue;
+                }
+
                 try
                 {
-                    // Update status for current file
-                    StatusText = $"Checking {tonieFile.FileName}... ({filesProcessed}/{totalFiles})";
-                    await Task.Delay(1); // Brief delay to ensure UI updates
+                    // This file is marked as LIVE, so remove the flag
+                    StatusText = $"Removing LIVE flag from {tonieFile.FileName}... ({filesProcessed}/{totalFiles})";
+                    await Task.Delay(1);
 
-                    // Only process files that have the Hidden attribute
-                    if (GetHiddenAttribute(tonieFile.FilePath))
+                    bool success = SetHiddenAttribute(tonieFile.FilePath, false);
+                    if (success)
                     {
-                        StatusText = $"Removing LIVE flag from {tonieFile.FileName}... ({filesProcessed}/{totalFiles})";
-                        await Task.Delay(1);
+                        tonieFile.IsLive = false;
 
-                        bool success = SetHiddenAttribute(tonieFile.FilePath, false);
-                        if (success)
-                        {
-                            tonieFile.IsLive = false;
+                        // Update DisplayName to remove [LIVE] prefix
+                        var titleWithoutLive = tonieFile.DisplayName.Replace("[LIVE] ", "");
+                        tonieFile.DisplayName = titleWithoutLive;
 
-                            // Update DisplayName to remove [LIVE] prefix
-                            var titleWithoutLive = tonieFile.DisplayName.Replace("[LIVE] ", "");
-                            tonieFile.DisplayName = titleWithoutLive;
-
-                            removedCount++;
-                        }
-                        else
-                        {
-                            errorCount++;
-                        }
+                        removedCount++;
+                    }
+                    else
+                    {
+                        errorCount++;
                     }
                 }
                 catch (Exception ex)
@@ -544,11 +681,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     string title = $"{subDir.Name}/{file.Name}";
                     string? imagePath = null;
                     bool isLive = false;
-
-                    // Check if file has Hidden attribute (LIVE flag) using cross-platform method
-                    StatusText = $"Checking LIVE flag for {file.Name}... ({filesProcessed}/{totalDirs})";
-                    await Task.Delay(1); // Brief delay to ensure UI updates
-                    isLive = GetHiddenAttribute(file.FullName);
+                    bool isKnownTonie = false;
 
                     try
                     {
@@ -560,6 +693,7 @@ public partial class MainWindowViewModel : ViewModelBase
                         {
                             title = metaTitle;
                             imagePath = metaImage;
+                            isKnownTonie = true; // This is an official Tonie from the database
 
                             // If image is not cached, try to download it asynchronously
                             if (imagePath == null)
@@ -576,6 +710,15 @@ public partial class MainWindowViewModel : ViewModelBase
                     catch
                     {
                         // If we can't read the file, just use the filename
+                    }
+
+                    // Only check LIVE flag for custom/unknown tonies (not in database)
+                    // Official tonies from the database never have the LIVE flag
+                    if (!isKnownTonie)
+                    {
+                        StatusText = $"Checking LIVE flag for {file.Name}... ({filesProcessed}/{totalDirs})";
+                        await Task.Delay(1); // Brief delay to ensure UI updates
+                        isLive = GetHiddenAttribute(file.FullName);
                     }
 
                     // Add [LIVE] prefix if file has Hidden attribute
