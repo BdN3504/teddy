@@ -7,6 +7,7 @@
         mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="800"
         x:Class="TeddyBench.Avalonia.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
+        Icon="/Assets/avalonia-logo.ico"
         Title="TeddyBench - Cross-platform Tonie File Manager"
         Width="1200" Height="800">
 
