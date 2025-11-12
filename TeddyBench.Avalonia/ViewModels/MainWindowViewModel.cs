@@ -14,6 +14,15 @@ using TeddyBench.Avalonia.Services;
 
 namespace TeddyBench.Avalonia.ViewModels;
 
+public enum SortOption
+{
+    DisplayName,
+    DirectoryName,
+    Newest,
+    Oldest,
+    Customs
+}
+
 public partial class MainWindowViewModel : ViewModelBase
 {
     private readonly Window _window;
@@ -23,6 +32,19 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _window = window;
         _metadataService = new TonieMetadataService();
+
+        // Initialize sort options for ComboBox
+        SortOptions = new ObservableCollection<SortOptionItem>
+        {
+            new SortOptionItem { Option = SortOption.DisplayName, DisplayText = "Display Name" },
+            new SortOptionItem { Option = SortOption.DirectoryName, DisplayText = "Directory name" },
+            new SortOptionItem { Option = SortOption.Newest, DisplayText = "Newest" },
+            new SortOptionItem { Option = SortOption.Oldest, DisplayText = "Oldest" },
+            new SortOptionItem { Option = SortOption.Customs, DisplayText = "Customs" }
+        };
+
+        // Set default sort option
+        CurrentSortOption = SortOptions[0]; // Display Name
 
         // Try to download tonies.json on startup if it doesn't exist
         _ = InitializeMetadataAsync();
@@ -72,6 +94,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private string _selectedFileDetails = string.Empty;
 
+    [ObservableProperty]
+    private ObservableCollection<SortOptionItem> _sortOptions = new();
+
+    [ObservableProperty]
+    private SortOptionItem? _currentSortOption;
+
     public bool HasSelectedFile => SelectedFile != null;
     public bool HasValidDirectory => !string.IsNullOrEmpty(CurrentDirectory);
 
@@ -87,6 +115,14 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnCurrentDirectoryChanged(string? value)
     {
         OnPropertyChanged(nameof(HasValidDirectory));
+    }
+
+    partial void OnCurrentSortOptionChanged(SortOptionItem? value)
+    {
+        if (value != null && TonieFiles.Count > 0)
+        {
+            ApplySorting();
+        }
     }
 
     [RelayCommand]
@@ -1152,22 +1188,24 @@ public partial class MainWindowViewModel : ViewModelBase
                     string? imagePath = null;
                     bool isLive = false;
                     bool isKnownTonie = false;
+                    bool isCustomTonie = false;
 
                     try
                     {
                         var audio = TonieAudio.FromFile(file.FullName, false);
                         var hash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
                         // Pass the RFID folder name (subDir.Name) so custom tonies show the RFID instead of hash
-                        var (metaTitle, metaImage) = _metadataService.GetTonieInfo(hash, subDir.Name);
+                        var (metaTitle, metaImage, metaIsCustom) = _metadataService.GetTonieInfo(hash, subDir.Name);
 
                         if (!string.IsNullOrEmpty(metaTitle) && metaTitle != "Unknown Tonie")
                         {
                             title = metaTitle;
                             imagePath = metaImage;
-                            isKnownTonie = true; // This is an official Tonie from the database
+                            isCustomTonie = metaIsCustom;
+                            isKnownTonie = !metaIsCustom; // Official tonies are not custom tonies
 
                             // If image is not cached, try to download it asynchronously
-                            if (imagePath == null)
+                            if (imagePath == null && !isCustomTonie)
                             {
                                 var picUrl = _metadataService.GetPicUrl(hash);
                                 if (!string.IsNullOrEmpty(picUrl))
@@ -1200,9 +1238,11 @@ public partial class MainWindowViewModel : ViewModelBase
                         FileName = file.Name,
                         FilePath = file.FullName,
                         DisplayName = displayTitle,
+                        DirectoryName = subDir.Name,
                         InfoText = $"Size: {file.Length / 1024} KB",
                         ImagePath = imagePath,
-                        IsLive = isLive
+                        IsLive = isLive,
+                        IsCustomTonie = isCustomTonie
                     });
                 }
             }
@@ -1226,6 +1266,9 @@ public partial class MainWindowViewModel : ViewModelBase
             }
 
             StatusText = $"Scan complete: Found {TonieFiles.Count} Tonie file(s)";
+
+            // Apply sorting after loading files
+            ApplySorting();
         }
         catch (Exception ex)
         {
@@ -1237,6 +1280,75 @@ public partial class MainWindowViewModel : ViewModelBase
         }
 
         await Task.CompletedTask;
+    }
+
+    private void ApplySorting()
+    {
+        if (CurrentSortOption == null || TonieFiles.Count == 0)
+            return;
+
+        List<TonieFileItem> sortedList;
+
+        switch (CurrentSortOption.Option)
+        {
+            case SortOption.DisplayName:
+                // Remove [LIVE] prefix for sorting purposes
+                sortedList = TonieFiles.OrderBy(t => t.DisplayName.Replace("[LIVE] ", "")).ToList();
+                break;
+
+            case SortOption.DirectoryName:
+                sortedList = TonieFiles.OrderBy(t => t.DirectoryName).ToList();
+                break;
+
+            case SortOption.Newest:
+                // Sort by file modification date (newest first)
+                sortedList = TonieFiles.OrderByDescending(t =>
+                {
+                    try
+                    {
+                        return new FileInfo(t.FilePath).LastWriteTime;
+                    }
+                    catch
+                    {
+                        return DateTime.MinValue;
+                    }
+                }).ToList();
+                break;
+
+            case SortOption.Oldest:
+                // Sort by file modification date (oldest first)
+                sortedList = TonieFiles.OrderBy(t =>
+                {
+                    try
+                    {
+                        return new FileInfo(t.FilePath).LastWriteTime;
+                    }
+                    catch
+                    {
+                        return DateTime.MaxValue;
+                    }
+                }).ToList();
+                break;
+
+            case SortOption.Customs:
+                // Custom tonies first (entries in customTonies.json), then others
+                // Sort both groups alphabetically
+                sortedList = TonieFiles
+                    .OrderBy(t => t.IsCustomTonie ? 0 : 1) // Customs first
+                    .ThenBy(t => t.DisplayName.Replace("[LIVE] ", "")) // Sort alphabetically within each group
+                    .ToList();
+                break;
+
+            default:
+                return;
+        }
+
+        // Replace TonieFiles collection with sorted list
+        TonieFiles.Clear();
+        foreach (var item in sortedList)
+        {
+            TonieFiles.Add(item);
+        }
     }
 
     private void UpdateSelectedFileDetails(TonieFileItem file)
@@ -1292,6 +1404,9 @@ public partial class TonieFileItem : ObservableObject
     private string _displayName = string.Empty;
 
     [ObservableProperty]
+    private string _directoryName = string.Empty;
+
+    [ObservableProperty]
     private string _infoText = string.Empty;
 
     [ObservableProperty]
@@ -1302,6 +1417,9 @@ public partial class TonieFileItem : ObservableObject
 
     [ObservableProperty]
     private bool _isSelected;
+
+    [ObservableProperty]
+    private bool _isCustomTonie;
 }
 
 public partial class AudioTrackItem : ObservableObject
@@ -1317,4 +1435,10 @@ public partial class AudioTrackItem : ObservableObject
 
     [ObservableProperty]
     private bool _isSelected;
+}
+
+public class SortOptionItem
+{
+    public SortOption Option { get; set; }
+    public string DisplayText { get; set; } = string.Empty;
 }

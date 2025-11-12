@@ -68,6 +68,20 @@
                 <Button Command="{Binding ShowInfoCommand}" Content="Show Info"/>
                 <Button Command="{Binding RefreshCommand}" Content="Refresh"/>
                 <Button Command="{Binding RemoveAllLiveFlagsCommand}" Content="Remove All LIVE Flags"/>
+
+                <!-- Sort Dropdown -->
+                <StackPanel Orientation="Horizontal" Spacing="5" Margin="20,0,0,0">
+                    <TextBlock Text="Sort by:" VerticalAlignment="Center" />
+                    <ComboBox ItemsSource="{Binding SortOptions}"
+                             SelectedItem="{Binding CurrentSortOption}"
+                             Width="150">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding DisplayText}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                </StackPanel>
             </StackPanel>
 
             <Border Grid.Row="1" BorderBrush="#CCCCCC" BorderThickness="1">

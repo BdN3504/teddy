@@ -96,14 +96,14 @@ namespace TeddyBench.Avalonia.Services
             return reversed;
         }
 
-        public (string title, string? imagePath) GetTonieInfo(string hash, string? rfidFolder = null)
+        public (string title, string? imagePath, bool isCustom) GetTonieInfo(string hash, string? rfidFolder = null)
         {
             hash = hash.ToUpperInvariant();
 
             // Try custom tonies first
             if (_customTonies.ContainsKey(hash))
             {
-                return (_customTonies[hash], GetCachedImage(hash));
+                return (_customTonies[hash], GetCachedImage(hash), true);
             }
 
             // Try tonies database
@@ -113,7 +113,7 @@ namespace TeddyBench.Avalonia.Services
             if (tonie != null)
             {
                 var title = !string.IsNullOrEmpty(tonie.Title) ? tonie.Title : tonie.Series;
-                return (title, GetCachedImage(hash));
+                return (title, GetCachedImage(hash), false);
             }
 
             // Not found in either database - create a custom entry
@@ -122,7 +122,7 @@ namespace TeddyBench.Avalonia.Services
                 ? $"Custom Tonie [RFID: {ReverseByteOrder(rfidFolder)}]"
                 : $"Custom Tonie [{hash.Substring(0, 8)}]";
             AddCustomTonie(hash, customTitle);
-            return (customTitle, null);
+            return (customTitle, null, true);
         }
 
         public void AddCustomTonie(string hash, string title)
