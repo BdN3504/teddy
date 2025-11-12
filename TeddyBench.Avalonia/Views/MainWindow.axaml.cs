@@ -1,6 +1,7 @@
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using TeddyBench.Avalonia.ViewModels;
+using TeddyBench.Avalonia.Models;
 using System.ComponentModel;
 
 namespace TeddyBench.Avalonia.Views;
