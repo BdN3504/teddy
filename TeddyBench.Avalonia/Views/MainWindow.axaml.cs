@@ -28,14 +28,21 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ContextMenu_Opened(object? sender, RoutedEventArgs e)
+    private void Button_ContextRequested(object? sender, RoutedEventArgs e)
     {
-        if (sender is ContextMenu contextMenu &&
-            contextMenu.PlacementTarget is Button button &&
+        if (sender is Button button &&
             button.Tag is TonieFileItem item &&
             DataContext is MainWindowViewModel viewModel)
         {
-            // Select the item when context menu opens
+            // Select the item before context menu opens
+            // Deselect all items first
+            foreach (var tonieFile in viewModel.TonieFiles)
+            {
+                tonieFile.IsSelected = false;
+            }
+
+            // Select the right-clicked item
+            item.IsSelected = true;
             viewModel.SelectedFile = item;
         }
     }

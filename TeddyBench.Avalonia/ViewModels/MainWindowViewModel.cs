@@ -449,10 +449,10 @@ public partial class MainWindowViewModel : ViewModelBase
             // Update button states when selection changes
             trackListBox.SelectionChanged += (s, e) =>
             {
-                var selectedIndices = trackListBox.SelectedItems.Cast<AudioTrackItem>()
+                var selectedIndices = trackListBox.SelectedItems?.OfType<AudioTrackItem>()
                     .Select(t => trackList.IndexOf(t))
                     .OrderBy(i => i)
-                    .ToList();
+                    .ToList() ?? new List<int>();
 
                 canMoveUp = selectedIndices.Count > 0 && selectedIndices[0] > 0;
                 canMoveDown = selectedIndices.Count > 0 && selectedIndices[selectedIndices.Count - 1] < trackList.Count - 1;
@@ -465,10 +465,10 @@ public partial class MainWindowViewModel : ViewModelBase
             // Move Up button click handler
             btnMoveUp.Click += (s, e) =>
             {
-                var selectedIndices = trackListBox.SelectedItems.Cast<AudioTrackItem>()
+                var selectedIndices = trackListBox.SelectedItems?.OfType<AudioTrackItem>()
                     .Select(t => trackList.IndexOf(t))
                     .OrderBy(i => i)
-                    .ToList();
+                    .ToList() ?? new List<int>();
 
                 if (selectedIndices.Count == 0 || selectedIndices[0] == 0)
                     return;
@@ -493,20 +493,20 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
 
                 // Restore selection
-                trackListBox.SelectedItems.Clear();
+                trackListBox.SelectedItems?.Clear();
                 foreach (var item in selectedItems)
                 {
-                    trackListBox.SelectedItems.Add(item);
+                    trackListBox.SelectedItems?.Add(item);
                 }
             };
 
             // Move Down button click handler
             btnMoveDown.Click += (s, e) =>
             {
-                var selectedIndices = trackListBox.SelectedItems.Cast<AudioTrackItem>()
+                var selectedIndices = trackListBox.SelectedItems?.OfType<AudioTrackItem>()
                     .Select(t => trackList.IndexOf(t))
                     .OrderByDescending(i => i)
-                    .ToList();
+                    .ToList() ?? new List<int>();
 
                 if (selectedIndices.Count == 0 || selectedIndices[0] == trackList.Count - 1)
                     return;
@@ -531,10 +531,10 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
 
                 // Restore selection
-                trackListBox.SelectedItems.Clear();
+                trackListBox.SelectedItems?.Clear();
                 foreach (var item in selectedItems)
                 {
-                    trackListBox.SelectedItems.Add(item);
+                    trackListBox.SelectedItems?.Add(item);
                 }
             };
 
@@ -600,7 +600,7 @@ public partial class MainWindowViewModel : ViewModelBase
             // Remove button click handler
             btnRemove.Click += (s, e) =>
             {
-                var selectedItems = trackListBox.SelectedItems.Cast<AudioTrackItem>().ToList();
+                var selectedItems = trackListBox.SelectedItems?.OfType<AudioTrackItem>().ToList() ?? new List<AudioTrackItem>();
 
                 if (selectedItems.Count == 0)
                     return;
@@ -626,7 +626,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
 
                 // Clear selection
-                trackListBox.SelectedItems.Clear();
+                trackListBox.SelectedItems?.Clear();
             };
 
             var btnOk = new Button
@@ -789,12 +789,44 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            // Show folder picker dialog with default to home folder
+            var storageProvider = _window.StorageProvider;
+
+            var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var options = new FolderPickerOpenOptions
+            {
+                Title = "Select Destination Folder for Decoded Files",
+                AllowMultiple = false,
+                SuggestedStartLocation = await storageProvider.TryGetFolderFromPathAsync(homePath)
+            };
+
+            var result = await storageProvider.OpenFolderPickerAsync(options);
+
+            if (result.Count == 0)
+            {
+                StatusText = "Decode cancelled - no folder selected";
+                return;
+            }
+
+            var selectedFolder = result[0];
+            var baseFolderPath = selectedFolder.TryGetLocalPath();
+
+            if (string.IsNullOrEmpty(baseFolderPath))
+            {
+                StatusText = "Error: Could not access the selected folder";
+                return;
+            }
+
+            // Sanitize the title - remove all bracketed content
+            string sanitizedTitle = SanitizeTitle(SelectedFile.DisplayName);
+
+            // Create subfolder with sanitized title
+            var outputDir = Path.Combine(baseFolderPath, sanitizedTitle);
+            Directory.CreateDirectory(outputDir);
+
             StatusText = $"Decoding {SelectedFile.FileName}...";
 
             var audio = TonieAudio.FromFile(SelectedFile.FilePath);
-            var outputDir = Path.Combine(Path.GetDirectoryName(SelectedFile.FilePath)!, "decoded");
-            Directory.CreateDirectory(outputDir);
-
             audio.DumpAudioFiles(outputDir, Path.GetFileName(SelectedFile.FilePath), false, Array.Empty<string>(), null);
 
             StatusText = $"Successfully decoded to {outputDir}";
@@ -920,6 +952,38 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    /// <summary>
+    /// Sanitizes a title by removing all bracketed content (e.g., "[LIVE]", "[RFID: ...]").
+    /// Examples:
+    ///   "[LIVE] Chet faker - built on glass [RFID: 003311aa66bb]" -> "Chet faker - built on glass"
+    ///   "My Tonie [RFID: 12345678]" -> "My Tonie"
+    /// </summary>
+    private string SanitizeTitle(string title)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            return "decoded";
+
+        // Remove all text within square brackets (including the brackets themselves)
+        // This regex matches opening bracket, any content, closing bracket
+        string sanitized = Regex.Replace(title, @"\s*\[.*?\]\s*", " ");
+
+        // Clean up extra whitespace
+        sanitized = Regex.Replace(sanitized, @"\s+", " ").Trim();
+
+        // If the result is empty after sanitization, use a default name
+        if (string.IsNullOrWhiteSpace(sanitized))
+            return "decoded";
+
+        // Remove invalid filename characters
+        var invalidChars = Path.GetInvalidFileNameChars();
+        foreach (var c in invalidChars)
+        {
+            sanitized = sanitized.Replace(c, '_');
+        }
+
+        return sanitized;
+    }
+
     private bool GetHiddenAttribute(string filePath)
     {
         try
@@ -1030,12 +1094,44 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            // Show folder picker dialog with default to home folder
+            var storageProvider = _window.StorageProvider;
+
+            var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var options = new FolderPickerOpenOptions
+            {
+                Title = "Select Destination Folder for Decoded Files",
+                AllowMultiple = false,
+                SuggestedStartLocation = await storageProvider.TryGetFolderFromPathAsync(homePath)
+            };
+
+            var result = await storageProvider.OpenFolderPickerAsync(options);
+
+            if (result.Count == 0)
+            {
+                StatusText = "Decode cancelled - no folder selected";
+                return;
+            }
+
+            var selectedFolder = result[0];
+            var baseFolderPath = selectedFolder.TryGetLocalPath();
+
+            if (string.IsNullOrEmpty(baseFolderPath))
+            {
+                StatusText = "Error: Could not access the selected folder";
+                return;
+            }
+
+            // Sanitize the title - remove all bracketed content
+            string sanitizedTitle = SanitizeTitle(file.DisplayName);
+
+            // Create subfolder with sanitized title
+            var outputDir = Path.Combine(baseFolderPath, sanitizedTitle);
+            Directory.CreateDirectory(outputDir);
+
             StatusText = $"Decoding {file.FileName}...";
 
             var audio = TonieAudio.FromFile(file.FilePath);
-            var outputDir = Path.Combine(Path.GetDirectoryName(file.FilePath)!, "decoded");
-            Directory.CreateDirectory(outputDir);
-
             audio.DumpAudioFiles(outputDir, Path.GetFileName(file.FilePath), false, Array.Empty<string>(), null);
 
             StatusText = $"Successfully decoded to {outputDir}";
@@ -1191,6 +1287,143 @@ public partial class MainWindowViewModel : ViewModelBase
             StatusText = $"Error deleting file: {ex.Message}";
             Console.WriteLine($"Error: {ex}");
         }
+    }
+
+    [RelayCommand]
+    private async Task RenameSelectedTonie(TonieFileItem? file)
+    {
+        if (file == null)
+        {
+            StatusText = "Please select a file first";
+            return;
+        }
+
+        // Only allow renaming custom tonies
+        if (!file.IsCustomTonie)
+        {
+            StatusText = "Only custom tonies can be renamed. Official tonies from the database cannot be renamed.";
+            return;
+        }
+
+        try
+        {
+            // Get the hash first
+            string? hash = null;
+            try
+            {
+                var audio = TonieAudio.FromFile(file.FilePath, false);
+                hash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"Error reading file: {ex.Message}";
+                Console.WriteLine($"Error reading file: {ex}");
+                return;
+            }
+
+            if (string.IsNullOrEmpty(hash))
+            {
+                StatusText = "Error: Could not read file hash";
+                return;
+            }
+
+            // Extract the current title without [LIVE] and [RFID: ...] prefixes
+            string currentTitle = SanitizeTitle(file.DisplayName);
+
+            // Show rename dialog
+            var renameDialog = new Window
+            {
+                Title = "Rename Tonie",
+                Width = 450,
+                Height = 220,
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                CanResize = false
+            };
+
+            var titleInput = new TextBox
+            {
+                Text = currentTitle,
+                Margin = new global::Avalonia.Thickness(10)
+            };
+
+            // Set cursor to end of text when dialog opens
+            titleInput.AttachedToVisualTree += (s, e) =>
+            {
+                titleInput.SelectAll();
+                titleInput.Focus();
+            };
+
+            var okButton = new Button { Content = "OK", Width = 80, HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Center };
+            var cancelButton = new Button { Content = "Cancel", Width = 80, HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Center, Margin = new global::Avalonia.Thickness(10, 0, 0, 0) };
+
+            bool? dialogResult = null;
+            okButton.Click += (s, e) => { dialogResult = true; renameDialog.Close(); };
+            cancelButton.Click += (s, e) => { dialogResult = false; renameDialog.Close(); };
+
+            var buttonPanel = new StackPanel { Orientation = global::Avalonia.Layout.Orientation.Horizontal, HorizontalAlignment = global::Avalonia.Layout.HorizontalAlignment.Center, Margin = new global::Avalonia.Thickness(10) };
+            buttonPanel.Children.Add(okButton);
+            buttonPanel.Children.Add(cancelButton);
+
+            var mainPanel = new StackPanel { Margin = new global::Avalonia.Thickness(10) };
+            mainPanel.Children.Add(new TextBlock
+            {
+                Text = "Enter a new name for this tonie:",
+                Margin = new global::Avalonia.Thickness(0, 0, 0, 5),
+                FontWeight = global::Avalonia.Media.FontWeight.Bold
+            });
+            mainPanel.Children.Add(new TextBlock
+            {
+                Text = "Note: RFID information will be preserved automatically.",
+                Margin = new global::Avalonia.Thickness(0, 0, 0, 10),
+                FontSize = 11,
+                Foreground = global::Avalonia.Media.Brushes.Gray
+            });
+            mainPanel.Children.Add(titleInput);
+            mainPanel.Children.Add(buttonPanel);
+
+            renameDialog.Content = mainPanel;
+            await renameDialog.ShowDialog(_window);
+
+            if (dialogResult != true)
+            {
+                StatusText = "Rename cancelled";
+                return;
+            }
+
+            string newTitle = titleInput.Text?.Trim() ?? "";
+            if (string.IsNullOrWhiteSpace(newTitle))
+            {
+                StatusText = "Error: Title cannot be empty";
+                return;
+            }
+
+            // Extract RFID from current title if present (to preserve it)
+            string? rfidPart = null;
+            var rfidMatch = Regex.Match(file.DisplayName, @"\[RFID:\s*([0-9A-F]{8})\]", RegexOptions.IgnoreCase);
+            if (rfidMatch.Success)
+            {
+                rfidPart = $" [RFID: {rfidMatch.Groups[1].Value}]";
+            }
+
+            // Construct the full new title with RFID (if it existed)
+            string fullNewTitle = newTitle + (rfidPart ?? "");
+
+            // Update in customTonies.json
+            _metadataService.UpdateCustomTonie(hash, fullNewTitle);
+
+            // Update the DisplayName in the UI
+            bool isLive = file.IsLive;
+            file.DisplayName = isLive ? $"[LIVE] {fullNewTitle}" : fullNewTitle;
+
+            StatusText = $"Successfully renamed tonie to '{newTitle}'";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error renaming tonie: {ex.Message}";
+            Console.WriteLine($"Error: {ex}");
+        }
+
+        await Task.CompletedTask;
     }
 
     [RelayCommand]

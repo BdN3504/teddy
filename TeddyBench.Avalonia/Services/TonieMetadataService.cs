@@ -140,6 +140,21 @@ namespace TeddyBench.Avalonia.Services
             }
         }
 
+        public void UpdateCustomTonie(string hash, string newTitle)
+        {
+            hash = hash.ToUpperInvariant();
+
+            if (_customTonies.ContainsKey(hash))
+            {
+                _customTonies[hash] = newTitle;
+                _customToniesModified = true;
+                Console.WriteLine($"Updated custom Tonie: {hash} = {newTitle}");
+
+                // Save immediately
+                SaveCustomTonies();
+            }
+        }
+
         public void RemoveCustomTonie(string hash)
         {
             hash = hash.ToUpperInvariant();
