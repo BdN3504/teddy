@@ -650,7 +650,7 @@ namespace TonieFile
 
             Audio = File.ReadAllBytes(tempName);
 
-            var prov = new SHA1CryptoServiceProvider();
+            using var prov = SHA1.Create();
             Header.Hash = prov.ComputeHash(Audio);
             Header.AudioChapters = chapters.ToArray();
             Header.AudioLength = Audio.Length;
@@ -699,7 +699,7 @@ namespace TonieFile
             var coder = new ProtoCoder();
             FileHeader header = coder.Deserialize<FileHeader>(protoBuf);
 
-            var prov = new SHA1CryptoServiceProvider();
+            using var prov = SHA1.Create();
             var hash = prov.ComputeHash(payload);
 
             HashCorrect = true;

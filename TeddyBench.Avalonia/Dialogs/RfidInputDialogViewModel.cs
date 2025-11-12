@@ -12,16 +12,8 @@ public partial class RfidInputDialogViewModel : ObservableObject
 
     public RfidInputDialogViewModel(string rfidPrefix)
     {
-        RfidUid = rfidPrefix;
-    }
-
-    partial void OnRfidUidChanged(string value)
-    {
-        // Automatically convert to uppercase
-        if (!string.IsNullOrEmpty(value) && value != value.ToUpper())
-        {
-            RfidUid = value.ToUpper();
-        }
+        // Convert to uppercase on initialization
+        RfidUid = rfidPrefix.ToUpper();
     }
 
     [RelayCommand]
