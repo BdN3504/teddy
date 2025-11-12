@@ -43,8 +43,9 @@ public partial class MainWindowViewModel : ViewModelBase
             new SortOptionItem { Option = SortOption.Customs, DisplayText = "Customs" }
         };
 
-        // Set default sort option
-        CurrentSortOption = SortOptions[0]; // Display Name
+        // Load sort option from configuration
+        var savedSortOption = LoadSortOptionFromConfig();
+        CurrentSortOption = SortOptions.FirstOrDefault(s => s.Option == savedSortOption) ?? SortOptions[0];
 
         // Try to download tonies.json on startup if it doesn't exist
         _ = InitializeMetadataAsync();
@@ -119,9 +120,15 @@ public partial class MainWindowViewModel : ViewModelBase
 
     partial void OnCurrentSortOptionChanged(SortOptionItem? value)
     {
-        if (value != null && TonieFiles.Count > 0)
+        if (value != null)
         {
-            ApplySorting();
+            // Save the sort option to config file
+            SaveSortOptionToConfig(value.Option);
+
+            if (TonieFiles.Count > 0)
+            {
+                ApplySorting();
+            }
         }
     }
 
@@ -369,8 +376,8 @@ public partial class MainWindowViewModel : ViewModelBase
             var sortDialog = new Window
             {
                 Title = "Sort Your Tracks",
-                Width = 700,
-                Height = 500,
+                Width = 850,
+                Height = 550,
                 WindowStartupLocation = WindowStartupLocation.CenterOwner,
                 CanResize = true
             };
@@ -411,7 +418,7 @@ public partial class MainWindowViewModel : ViewModelBase
             var btnMoveUp = new Button
             {
                 Content = "Move Up",
-                Width = 100,
+                Width = 110,
                 Margin = new global::Avalonia.Thickness(5),
                 IsEnabled = false
             };
@@ -419,7 +426,22 @@ public partial class MainWindowViewModel : ViewModelBase
             var btnMoveDown = new Button
             {
                 Content = "Move Down",
-                Width = 100,
+                Width = 110,
+                Margin = new global::Avalonia.Thickness(5),
+                IsEnabled = false
+            };
+
+            var btnAddFiles = new Button
+            {
+                Content = "Add Files",
+                Width = 110,
+                Margin = new global::Avalonia.Thickness(5, 20, 5, 5)
+            };
+
+            var btnRemove = new Button
+            {
+                Content = "Remove",
+                Width = 110,
                 Margin = new global::Avalonia.Thickness(5),
                 IsEnabled = false
             };
@@ -437,6 +459,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
                 btnMoveUp.IsEnabled = canMoveUp;
                 btnMoveDown.IsEnabled = canMoveDown;
+                btnRemove.IsEnabled = selectedIndices.Count > 0;
             };
 
             // Move Up button click handler
@@ -515,6 +538,97 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
             };
 
+            // Add Files button click handler
+            btnAddFiles.Click += async (s, e) =>
+            {
+                try
+                {
+                    var filePickerOptions = new FilePickerOpenOptions
+                    {
+                        Title = "Add Audio Files",
+                        AllowMultiple = true,
+                        FileTypeFilter = new[]
+                        {
+                            new FilePickerFileType("Audio Files") { Patterns = new[] { "*.mp3", "*.ogg", "*.flac", "*.wav", "*.m4a", "*.aac", "*.wma" } },
+                            new FilePickerFileType("All Files") { Patterns = new[] { "*" } }
+                        }
+                    };
+
+                    var selectedFiles = await storageProvider.OpenFilePickerAsync(filePickerOptions);
+
+                    if (selectedFiles.Count > 0)
+                    {
+                        // Fix file paths - ensure they start with '/' on Linux
+                        var newAudioPaths = selectedFiles
+                            .Select(f => f.TryGetLocalPath())
+                            .Where(p => !string.IsNullOrEmpty(p))
+                            .Select(p =>
+                            {
+                                // On Linux, TryGetLocalPath() sometimes returns paths without leading '/'
+                                if (OperatingSystem.IsLinux() && !p!.StartsWith("/"))
+                                {
+                                    return "/" + p;
+                                }
+                                return p!;
+                            })
+                            .ToArray();
+
+                        // Add new files to the end of the list
+                        foreach (var path in newAudioPaths)
+                        {
+                            trackList.Add(new AudioTrackItem
+                            {
+                                TrackNumber = trackList.Count + 1,
+                                FileName = Path.GetFileName(path),
+                                FilePath = path
+                            });
+                        }
+
+                        // Update track numbers
+                        for (int i = 0; i < trackList.Count; i++)
+                        {
+                            trackList[i].TrackNumber = i + 1;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error adding files: {ex.Message}");
+                }
+            };
+
+            // Remove button click handler
+            btnRemove.Click += (s, e) =>
+            {
+                var selectedItems = trackListBox.SelectedItems.Cast<AudioTrackItem>().ToList();
+
+                if (selectedItems.Count == 0)
+                    return;
+
+                // Prevent removing all tracks - need at least one
+                if (selectedItems.Count >= trackList.Count)
+                {
+                    // Show a simple message - can't remove all tracks
+                    Console.WriteLine("Cannot remove all tracks - at least one track is required");
+                    return;
+                }
+
+                // Remove selected items
+                foreach (var item in selectedItems)
+                {
+                    trackList.Remove(item);
+                }
+
+                // Update track numbers
+                for (int i = 0; i < trackList.Count; i++)
+                {
+                    trackList[i].TrackNumber = i + 1;
+                }
+
+                // Clear selection
+                trackListBox.SelectedItems.Clear();
+            };
+
             var btnOk = new Button
             {
                 Content = "Encode",
@@ -540,10 +654,12 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 Orientation = global::Avalonia.Layout.Orientation.Vertical,
                 VerticalAlignment = global::Avalonia.Layout.VerticalAlignment.Top,
-                Margin = new global::Avalonia.Thickness(10)
+                Margin = new global::Avalonia.Thickness(5, 10, 10, 10)
             };
             moveButtonPanel.Children.Add(btnMoveUp);
             moveButtonPanel.Children.Add(btnMoveDown);
+            moveButtonPanel.Children.Add(btnAddFiles);
+            moveButtonPanel.Children.Add(btnRemove);
 
             var bottomPanel = new StackPanel
             {
@@ -561,9 +677,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var headerText = new TextBlock
             {
-                Text = "Reorder tracks using the Up/Down buttons. Multi-select with Ctrl or Shift.",
+                Text = "Reorder tracks using Up/Down buttons.\nAdd more files or remove selected tracks.\nMulti-select with Ctrl or Shift.",
                 Margin = new global::Avalonia.Thickness(10),
-                FontWeight = global::Avalonia.Media.FontWeight.Bold
+                FontWeight = global::Avalonia.Media.FontWeight.Bold,
+                TextWrapping = global::Avalonia.Media.TextWrapping.Wrap
             };
             Grid.SetRow(headerText, 0);
 
@@ -733,6 +850,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void Exit()
     {
+        // Save configuration before exiting
+        if (CurrentSortOption != null)
+        {
+            SaveSortOptionToConfig(CurrentSortOption.Option);
+        }
+
         Environment.Exit(0);
     }
 
@@ -1388,6 +1511,75 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             Console.WriteLine($"Error downloading image for {hash}: {ex.Message}");
+        }
+    }
+
+    private SortOption LoadSortOptionFromConfig()
+    {
+        try
+        {
+            var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+            if (File.Exists(configPath))
+            {
+                var configJson = File.ReadAllText(configPath);
+                var config = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, object>>(configJson);
+
+                if (config != null && config.ContainsKey("SortOption"))
+                {
+                    var sortOptionString = config["SortOption"].ToString();
+                    if (Enum.TryParse<SortOption>(sortOptionString, out var sortOption))
+                    {
+                        return sortOption;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: Could not load sort option from config: {ex.Message}");
+        }
+
+        // Default to DisplayName if not found or error
+        return SortOption.DisplayName;
+    }
+
+    private void SaveSortOptionToConfig(SortOption sortOption)
+    {
+        try
+        {
+            var configPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+
+            // Read existing config
+            Dictionary<string, object> config;
+            if (File.Exists(configPath))
+            {
+                var configJson = File.ReadAllText(configPath);
+                config = Newtonsoft.Json.JsonConvert.DeserializeObject<Dictionary<string, object>>(configJson) ?? new Dictionary<string, object>();
+            }
+            else
+            {
+                config = new Dictionary<string, object>();
+            }
+
+            // Update sort option
+            config["SortOption"] = sortOption.ToString();
+
+            // Write back to file with formatting
+            var updatedJson = Newtonsoft.Json.JsonConvert.SerializeObject(config, Newtonsoft.Json.Formatting.Indented);
+            File.WriteAllText(configPath, updatedJson);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: Could not save sort option to config: {ex.Message}");
+        }
+    }
+
+    public void SaveConfigurationOnExit()
+    {
+        // Save current sort option before exiting
+        if (CurrentSortOption != null)
+        {
+            SaveSortOptionToConfig(CurrentSortOption.Option);
         }
     }
 }
