@@ -955,4 +955,216 @@ public partial class MainWindowViewModel : ViewModelBase
             Console.WriteLine($"Error: {ex}");
         }
     }
+
+    [RelayCommand]
+    private async Task ModifyContents(TonieFileItem? file)
+    {
+        if (file == null)
+        {
+            StatusText = "Please select a file first";
+            return;
+        }
+
+        try
+        {
+            // Read the original file to get its hash and audio ID
+            TonieAudio originalAudio;
+            try
+            {
+                originalAudio = TonieAudio.FromFile(file.FilePath, false);
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"Error reading tonie file: {ex.Message}";
+                return;
+            }
+
+            string oldHash = BitConverter.ToString(originalAudio.Header.Hash).Replace("-", "");
+            uint audioId = originalAudio.Header.AudioId;
+
+            // Check if this is a non-custom tonie and show warning
+            if (!file.IsCustomTonie)
+            {
+                var confirmDialog = new ConfirmModifyTonieDialog(file.DisplayName);
+                var confirmResult = await confirmDialog.ShowDialog<bool?>(_window);
+
+                if (confirmResult != true)
+                {
+                    StatusText = "Modification cancelled";
+                    return;
+                }
+            }
+
+            // Create temporary directory for decoded files
+            string tempDir = Path.Combine(Path.GetTempPath(), $"TeddyBench_Modify_{Guid.NewGuid():N}");
+            Directory.CreateDirectory(tempDir);
+
+            try
+            {
+                StatusText = $"Decoding {file.FileName} to temporary storage...";
+                await Task.Delay(100); // Brief delay for UI update
+
+                // Decode the tonie to temp directory
+                await Task.Run(() =>
+                {
+                    var audio = TonieAudio.FromFile(file.FilePath);
+                    audio.DumpAudioFiles(tempDir, Path.GetFileName(file.FilePath), false, Array.Empty<string>(), null);
+                });
+
+                // Get the decoded files and create placeholder names
+                var decodedFiles = Directory.GetFiles(tempDir, "*.ogg")
+                    .OrderBy(f => f)
+                    .ToArray();
+
+                if (decodedFiles.Length == 0)
+                {
+                    StatusText = "Error: No audio tracks found in tonie file";
+                    Directory.Delete(tempDir, true);
+                    return;
+                }
+
+                // Store the temp directory path to detect original files later
+                string tempDirPath = tempDir;
+
+                StatusText = $"Opening track editor with {decodedFiles.Length} track(s)...";
+
+                // Show track sorting dialog
+                var trackSortDialog = new TrackSortDialog(decodedFiles);
+                var sortResult = await trackSortDialog.ShowDialog<bool?>(_window);
+
+                if (sortResult != true)
+                {
+                    StatusText = "Modification cancelled";
+                    Directory.Delete(tempDir, true);
+                    return;
+                }
+
+                // Get the sorted/modified file paths
+                string[]? sortedAudioPaths = trackSortDialog.GetSortedFilePaths();
+
+                if (sortedAudioPaths == null || sortedAudioPaths.Length == 0)
+                {
+                    StatusText = "Error: At least one track is required";
+                    Directory.Delete(tempDir, true);
+                    return;
+                }
+
+                StatusText = $"Encoding {sortedAudioPaths.Length} track(s)...";
+                IsScanning = true;
+
+                string newHash = string.Empty;
+
+                await Task.Run(() =>
+                {
+                    // Build track sources - identify which are original vs new
+                    var trackSources = new List<HybridTonieEncodingService.TrackSourceInfo>();
+
+                    for (int i = 0; i < sortedAudioPaths.Length; i++)
+                    {
+                        string path = sortedAudioPaths[i];
+                        bool isOriginal = path.StartsWith(tempDirPath);
+
+                        var trackSource = new HybridTonieEncodingService.TrackSourceInfo
+                        {
+                            IsOriginal = isOriginal,
+                            AudioFilePath = path
+                        };
+
+                        // If this is an original track, extract its track index from the filename
+                        if (isOriginal)
+                        {
+                            // Filename format: "500304E0 - Track #01.ogg"
+                            var fileName = Path.GetFileName(path);
+                            var match = System.Text.RegularExpressions.Regex.Match(fileName, @"Track #(\d+)\.ogg");
+                            if (match.Success && int.TryParse(match.Groups[1].Value, out int trackNum))
+                            {
+                                trackSource.OriginalTrackIndex = trackNum - 1; // Convert to 0-based index
+                            }
+                        }
+
+                        trackSources.Add(trackSource);
+                    }
+
+                    // Use hybrid encoding to avoid re-encoding original tracks
+                    var hybridEncoder = new HybridTonieEncodingService();
+                    var (fileContent, hash) = hybridEncoder.EncodeHybridTonie(trackSources, audioId, file.FilePath, 96);
+                    newHash = hash;
+
+                    // Overwrite the original file
+                    File.WriteAllBytes(file.FilePath, fileContent);
+
+                    StatusText = $"Successfully modified {file.FileName}";
+                });
+
+                // Update customTonies.json with new hash
+                // Determine the title for the metadata
+                string metadataTitle = file.DisplayName;
+
+                // If it was an official tonie, extract just the title without [LIVE] prefix
+                if (!file.IsCustomTonie)
+                {
+                    metadataTitle = StringHelper.SanitizeTitle(file.DisplayName);
+
+                    // Try to extract RFID from the directory structure
+                    var fileInfo = new FileInfo(file.FilePath);
+                    var directory = fileInfo.Directory;
+                    if (directory?.Parent != null)
+                    {
+                        // Directory name is the reversed RFID
+                        string reversedRfid = directory.Name;
+                        // Reverse it back for display
+                        string displayRfid = _tonieFileService.ReverseUidBytes(reversedRfid);
+                        metadataTitle = $"{metadataTitle} [RFID: {displayRfid}]";
+                    }
+                }
+
+                _metadataService.UpdateTonieHash(oldHash, newHash, metadataTitle);
+
+                StatusText = $"Successfully modified {file.DisplayName}";
+
+                // Clean up temp directory
+                try
+                {
+                    Directory.Delete(tempDir, true);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Warning: Could not delete temp directory: {ex.Message}");
+                }
+
+                // Refresh the directory to show the updated tonie
+                if (!string.IsNullOrEmpty(CurrentDirectory))
+                {
+                    await ScanDirectory(CurrentDirectory);
+                }
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"Error modifying tonie: {ex.Message}";
+                Console.WriteLine($"Error: {ex}");
+
+                // Clean up temp directory on error
+                try
+                {
+                    if (Directory.Exists(tempDir))
+                    {
+                        Directory.Delete(tempDir, true);
+                    }
+                }
+                catch (Exception cleanupEx)
+                {
+                    Console.WriteLine($"Warning: Could not delete temp directory: {cleanupEx.Message}");
+                }
+            }
+            finally
+            {
+                IsScanning = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error: {ex.Message}";
+            Console.WriteLine($"Error: {ex}");
+        }
+    }
 }

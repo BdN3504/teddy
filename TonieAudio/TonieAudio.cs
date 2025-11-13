@@ -47,6 +47,39 @@ namespace TonieFile
 {
     public class TonieAudio
     {
+        /// <summary>
+        /// Represents a source for a track - either a file path to encode, or pre-encoded Ogg data.
+        /// </summary>
+        public class TrackSource
+        {
+            /// <summary>
+            /// Path to audio file to encode (for new tracks)
+            /// </summary>
+            public string FilePath { get; set; }
+
+            /// <summary>
+            /// Pre-encoded Ogg data (for original tracks to avoid re-encoding)
+            /// </summary>
+            public byte[] PreEncodedOggData { get; set; }
+
+            /// <summary>
+            /// True if this is pre-encoded data, false if it's a file path
+            /// </summary>
+            public bool IsPreEncoded => PreEncodedOggData != null && PreEncodedOggData.Length > 0;
+
+            public TrackSource(string filePath)
+            {
+                FilePath = filePath;
+                PreEncodedOggData = null;
+            }
+
+            public TrackSource(byte[] preEncodedData)
+            {
+                PreEncodedOggData = preEncodedData;
+                FilePath = null;
+            }
+        }
+
         public class FileHeader
         {
             public byte[] Hash;
@@ -185,43 +218,67 @@ namespace TonieFile
         public ulong[] ParsePositions()
         {
             List<ulong> positions = new List<ulong>();
-            var file = File.Open(Filename, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
 
-            int curChapter = 0;
-            long curPos = 0x1000;
+            // Always start with position 0
             positions.Add(0);
 
-            while (file.Position < file.Length)
+            if (Header.AudioChapters.Length == 0)
             {
-                byte[] buf = new byte[0x16];
+                // No chapters, just return start position
+                return positions.ToArray();
+            }
 
-                file.Seek(curPos, SeekOrigin.Begin);
-                file.Read(buf, 0, buf.Length);
+            // Parse Ogg stream to find chapter positions
+            int offset = 0;
+            int curChapter = 0;
+            ulong lastGranule = 0;
 
-                if (buf[0] != 'O' || buf[1] != 'g' || buf[2] != 'g')
+            while (offset < Audio.Length - 27)
+            {
+                // Check for Ogg page signature
+                if (Audio[offset] != 'O' || Audio[offset + 1] != 'g' ||
+                    Audio[offset + 2] != 'g' || Audio[offset + 3] != 'S')
                 {
-                    break;
+                    offset++;
+                    continue;
                 }
 
-                ulong granule = BitConverter.ToUInt64(buf, 6);
-                uint pageNum = BitConverter.ToUInt32(buf, 0x12);
+                // Read page header
+                ulong granule = BitConverter.ToUInt64(Audio, offset + 6);
+                uint pageNum = BitConverter.ToUInt32(Audio, offset + 18);
+                byte segmentCount = Audio[offset + 26];
 
-                if (Header.AudioChapters.Length > curChapter && pageNum >= Header.AudioChapters[curChapter])
+                // Track the last valid granule for the final position
+                if (granule != 0 && granule != ulong.MaxValue)
                 {
+                    lastGranule = granule;
+                }
+
+                // Check if this page starts a new chapter
+                if (curChapter < Header.AudioChapters.Length && pageNum >= Header.AudioChapters[curChapter])
+                {
+                    // Always add the granule position for this chapter marker
+                    // The player will deduplicate if needed (e.g., when chapter[0] = 0)
                     positions.Add(granule);
                     curChapter++;
                 }
 
-                if (file.Position == file.Length)
+                // Calculate page size to advance offset
+                int dataSize = 0;
+                for (int s = 0; s < segmentCount && (offset + 27 + s) < Audio.Length; s++)
                 {
-                    positions.Add(granule);
-                    break;
+                    dataSize += Audio[offset + 27 + s];
                 }
 
-                curPos += 0x1000;
+                offset += 27 + segmentCount + dataSize;
             }
 
-            file.Close();
+            // Add final position if we haven't added it yet
+            if (positions.Count == 1 || positions[positions.Count - 1] != lastGranule)
+            {
+                positions.Add(lastGranule);
+            }
+
             return positions.ToArray();
         }
 
@@ -303,6 +360,25 @@ namespace TonieFile
         {
             BuildFileList(sources);
             BuildFromFiles(FileList, audioId, bitRate, useVbr, prefixLocation, cbr);
+        }
+
+        /// <summary>
+        /// Constructor that supports mixing pre-encoded tracks with new tracks.
+        /// Pre-encoded tracks are copied directly without quality loss.
+        /// </summary>
+        public TonieAudio(TrackSource[] trackSources, uint audioId, int bitRate = 48000, bool useVbr = false, string prefixLocation = null, EncodeCallback cbr = null)
+        {
+            BuildFromTrackSources(trackSources, null, audioId, bitRate, useVbr, prefixLocation, cbr);
+        }
+
+        /// <summary>
+        /// Constructor that supports mixing pre-encoded tracks with new tracks.
+        /// Pre-encoded tracks are copied directly without quality loss.
+        /// Accepts original audio data for extracting proper headers.
+        /// </summary>
+        public TonieAudio(TrackSource[] trackSources, byte[] originalAudioData, uint audioId, int bitRate = 48000, bool useVbr = false, string prefixLocation = null, EncodeCallback cbr = null)
+        {
+            BuildFromTrackSources(trackSources, originalAudioData, audioId, bitRate, useVbr, prefixLocation, cbr);
         }
 
         public static TonieAudio FromFile(string file, bool readAudio = true)
@@ -419,6 +495,28 @@ namespace TonieFile
             WriteHeader();
         }
 
+        private void BuildFromTrackSources(TrackSource[] trackSources, byte[] originalAudioData, uint audioId, int bitRate, bool useVbr, string prefixLocation, EncodeCallback cbr)
+        {
+            // Check if we have any pre-encoded tracks
+            bool hasPreEncoded = trackSources.Any(t => t.IsPreEncoded);
+
+            if (hasPreEncoded)
+            {
+                // Use manual Ogg stream building when we have pre-encoded tracks
+                GenerateAudioFromTrackSourcesManual(trackSources, originalAudioData, audioId, bitRate, useVbr, prefixLocation, cbr);
+            }
+            else
+            {
+                // All tracks are file paths - use the normal OpusOggWriteStream approach
+                var filePaths = trackSources.Select(t => t.FilePath).ToList();
+                GenerateAudio(filePaths, audioId, bitRate, useVbr, prefixLocation, cbr);
+            }
+
+            FileContent = new byte[Audio.Length + 0x1000];
+            Array.Copy(Audio, 0, FileContent, 0x1000, Audio.Length);
+            WriteHeader();
+        }
+
         private void WriteHeader()
         {
             int expectedSize = 0x1000 - 4;
@@ -442,6 +540,503 @@ namespace TonieFile
             byte[] data = coder.Serialize(Header);
 
             Array.Copy(data, 0, FileContent, 4, data.Length);
+        }
+
+        /// <summary>
+        /// Generates audio from track sources by building the Ogg stream manually.
+        /// This is used when we have pre-encoded tracks to avoid quality loss.
+        /// New tracks are encoded to temp files first, then their pages are extracted.
+        /// </summary>
+        private void GenerateAudioFromTrackSourcesManual(TrackSource[] trackSources, byte[] originalAudioData, uint audioId, int bitRate, bool useVbr, string prefixLocation = null, EncodeCallback cbr = null)
+        {
+            if(cbr == null)
+            {
+                cbr = new EncodeCallback();
+            }
+
+            if (audioId == 0)
+            {
+                audioId = (uint)((DateTimeOffset)DateTime.UtcNow).ToUnixTimeSeconds();
+            }
+
+            // First pass: encode any non-pre-encoded tracks to temp TonieAudio files
+            // This way we can treat everything uniformly as pre-encoded data
+            List<byte[]> allTrackData = new List<byte[]>();
+            int track = 0;
+
+            foreach (var trackSource in trackSources)
+            {
+                track++;
+                cbr.FileStart(track, trackSource.IsPreEncoded ? $"[Pre-encoded track {track}]" : trackSource.FilePath);
+
+                if (trackSource.IsPreEncoded)
+                {
+                    // Already have the data
+                    allTrackData.Add(trackSource.PreEncodedOggData);
+                }
+                else
+                {
+                    // Encode this single track to a temporary TonieAudio
+                    var tempTonie = new TonieAudio(new[] { trackSource.FilePath }, audioId, bitRate, useVbr, prefixLocation, null);
+
+                    // Extract data pages (skip headers OpusHead and OpusTags)
+                    int headerOffset = 0;
+                    tempTonie.GetOggHeaders(ref headerOffset);
+
+                    // Data pages start after headers
+                    int dataLength = tempTonie.Audio.Length - headerOffset;
+                    byte[] dataPages = new byte[dataLength];
+                    Array.Copy(tempTonie.Audio, headerOffset, dataPages, 0, dataLength);
+                    allTrackData.Add(dataPages);
+                }
+
+                cbr.FileDone();
+            }
+
+            // Now build the combined stream from all track data
+            string tempName = Path.GetTempFileName();
+            List<uint> chapters = new List<uint>();
+
+            using (FileStream outputData = new FileStream(tempName, FileMode.Create, FileAccess.Write))
+            {
+                // Get headers from the original audio data or first track
+                // If we have originalAudioData, use it (contains proper OpusHead/OpusTags headers)
+                // Otherwise use allTrackData[0] (for all-new-tracks scenario where it has complete structure)
+                int hdrOffset = 0;
+                var tempAudio = new TonieAudio();
+                if (originalAudioData != null && originalAudioData.Length > 0)
+                {
+                    // Use original audio data which has proper headers
+                    tempAudio.Audio = originalAudioData;
+                }
+                else
+                {
+                    // Fall back to first track data (all-new-tracks case)
+                    tempAudio.Audio = allTrackData[0];
+                }
+                OggPage[] headers = tempAudio.GetOggHeaders(ref hdrOffset);
+
+                // Write all headers back-to-back
+                foreach (var header in headers)
+                {
+                    header.Write(outputData);
+                }
+
+                // MUST pad to exactly 0x200 (512 bytes) for Tonie format
+                // First data page MUST start at 0x200 (file offset 0x1200)
+                long posAfterHeaders = outputData.Position;
+                if (posAfterHeaders != 0x200)
+                {
+                    if (posAfterHeaders < 0x200)
+                    {
+                        // Pad if headers are smaller than 512 bytes
+                        byte[] headerPadding = new byte[0x200 - posAfterHeaders];
+                        outputData.Write(headerPadding, 0, headerPadding.Length);
+                    }
+                    else
+                    {
+                        // Error: headers are too large!
+                        Console.WriteLine($"[ERROR] Headers are {posAfterHeaders} bytes, expected 512 or less");
+                        // Truncate to 0x200 - this is bad but might work
+                        outputData.SetLength(0x200);
+                        outputData.Seek(0x200, SeekOrigin.Begin);
+                    }
+                }
+
+                // Track page numbering and granules
+                uint pageSeq = 2; // Start after headers
+                ulong cumulativeGranule = 0;
+
+                // Write each track's data
+                for (int i = 0; i < allTrackData.Count; i++)
+                {
+                    // Add chapter marker BEFORE writing track data
+                    // For first track, use 0 (convention); for others use current page sequence
+                    chapters.Add(i == 0 ? 0u : pageSeq);
+
+                    var (newPageSeq, newGranule) = CopyPreEncodedOggData(
+                        allTrackData[i],
+                        null, // Don't need OpusOggWriteStream anymore
+                        outputData,
+                        pageSeq,
+                        cumulativeGranule,
+                        audioId,
+                        cbr);
+
+                    pageSeq = newPageSeq;
+                    cumulativeGranule = newGranule;
+                }
+            }
+
+            Audio = File.ReadAllBytes(tempName);
+
+            using var prov = SHA1.Create();
+            Header.Hash = prov.ComputeHash(Audio);
+            Header.AudioChapters = chapters.ToArray();
+            Header.AudioLength = Audio.Length;
+            Header.AudioId = audioId;
+            Header.Padding = new byte[0];
+
+            File.Delete(tempName);
+        }
+
+        /// <summary>
+        /// Copies pre-encoded Ogg data by parsing pages and renumbering them.
+        /// This avoids re-encoding while maintaining proper stream continuity.
+        /// Pads pages to 4k boundaries as required by Tonie format.
+        /// Returns the new page index and the ending granule position.
+        /// </summary>
+        private (uint pageIndex, ulong endGranule) CopyPreEncodedOggData(byte[] preEncodedData, OpusOggWriteStream oggOut, Stream outputData, uint currentPageSeq, ulong cumulativeGranule, uint streamSerial, EncodeCallback cbr)
+        {
+            // Parse Ogg pages from the pre-encoded data
+            List<OggPage> pages = ParseOggPagesFromBytes(preEncodedData);
+
+            if (pages.Count == 0)
+            {
+                cbr.Warning("No Ogg pages found in pre-encoded data");
+                return (currentPageSeq, cumulativeGranule);
+            }
+
+            // Find the first and last valid granule positions in the pre-encoded data
+            // firstGranule = the minimum granule (this is the track's starting position)
+            // lastGranule = the maximum granule (this is the track's ending position)
+            ulong firstGranule = ulong.MaxValue;
+            ulong lastGranule = 0;
+
+            for (int i = 0; i < pages.Count; i++)
+            {
+                // Skip header pages and pages without granule information
+                if (pages[i].Header.PageSequenceNumber >= 2 &&
+                    pages[i].Header.GranulePosition != ulong.MaxValue)
+                {
+                    ulong granule = pages[i].Header.GranulePosition;
+
+                    // Track minimum and maximum granules
+                    if (granule < firstGranule)
+                    {
+                        firstGranule = granule;
+                    }
+                    if (granule > lastGranule)
+                    {
+                        lastGranule = granule;
+                    }
+                }
+            }
+
+            // Calculate the duration of this track in granules (relative duration)
+            ulong trackDurationGranules = 0;
+            if (firstGranule != ulong.MaxValue && lastGranule >= firstGranule)
+            {
+                trackDurationGranules = lastGranule - firstGranule;
+            }
+
+            // Write each page with renumbered sequence and updated stream ID
+            int pagesWritten = 0;
+            int pagesSkipped = 0;
+            foreach (var page in pages)
+            {
+                // Skip header pages (OpusHead, OpusTags) - they're already in the stream
+                if (page.Header.PageSequenceNumber < 2)
+                {
+                    pagesSkipped++;
+                    continue;
+                }
+
+                long posBeforeWrite = outputData.Position;
+
+                // Update the page header
+                page.Header.BitstreamSerialNumber = streamSerial;
+                page.Header.PageSequenceNumber = currentPageSeq++;
+
+                // Adjust granule position for continuity
+                // Subtract the track's first granule (make relative to 0), then add cumulative offset
+                if (page.Header.GranulePosition != ulong.MaxValue && firstGranule != ulong.MaxValue)
+                {
+                    if (page.Header.GranulePosition >= firstGranule)
+                    {
+                        page.Header.GranulePosition = (page.Header.GranulePosition - firstGranule) + cumulativeGranule;
+                    }
+                }
+
+                // Calculate page size before writing
+                int pageSize;
+                using (var tempStream = new MemoryStream())
+                {
+                    page.Write(tempStream);
+                    pageSize = (int)tempStream.Length;
+                }
+
+                // Tonie format requirement: pages must END at 4k boundaries
+                // Calculate how much padding is needed WITHIN the page to reach the boundary
+                long currentPos = posBeforeWrite;
+                long posAfterPage = currentPos + pageSize;
+                long nextBoundary = ((posAfterPage + 0xFFF) / 0x1000) * 0x1000;
+                long spaceToFill = nextBoundary - posAfterPage;
+
+                if (spaceToFill > 0)
+                {
+                    // Account for segment table entries
+                    // IMPORTANT: Use 254 bytes per segment to avoid the 255-byte special case
+                    // (255-byte segments need 2 table entries: 0xFF + 0x00)
+                    // Each 254-byte segment needs exactly 1 byte in the segment table
+                    // We need to solve: paddingData + ceil(paddingData / 254) = spaceToFill
+                    long paddingData = (spaceToFill * 254) / 255;
+                    int segmentEntries = (int)((paddingData + 253) / 254);  // ceil(paddingData / 254)
+
+                    // Adjust if our approximation is off
+                    while (paddingData + segmentEntries < spaceToFill)
+                    {
+                        paddingData++;
+                        segmentEntries = (int)((paddingData + 253) / 254);
+                    }
+                    while (paddingData + segmentEntries > spaceToFill)
+                    {
+                        paddingData--;
+                        segmentEntries = (int)((paddingData + 253) / 254);
+                    }
+
+                    if (paddingData > 0)
+                    {
+                        // Create new segments array with padding (max 254 bytes per segment)
+                        byte[][] newSegments = new byte[page.Segments.Length + segmentEntries][];
+                        Array.Copy(page.Segments, newSegments, page.Segments.Length);
+
+                        int segIdx = page.Segments.Length;
+                        long remaining = paddingData;
+                        while (remaining > 0)
+                        {
+                            int segSize = (int)Math.Min(254, remaining);  // Max 254 to avoid 255 special case
+                            newSegments[segIdx++] = new byte[segSize];
+                            remaining -= segSize;
+                        }
+                        page.Segments = newSegments;
+                    }
+                }
+
+                // Write the page (now with padding included)
+                page.Write(outputData);
+                pagesWritten++;
+            }
+
+            // Return the new page index and the ending cumulative granule position
+            ulong newCumulativeGranule = cumulativeGranule + trackDurationGranules;
+            return (currentPageSeq, newCumulativeGranule);
+        }
+
+        /// <summary>
+        /// Parses Ogg pages from a byte array.
+        /// </summary>
+        private List<OggPage> ParseOggPagesFromBytes(byte[] data)
+        {
+            List<OggPage> pages = new List<OggPage>();
+            int offset = 0;
+
+            while (offset < data.Length - 27) // Minimum Ogg page header size
+            {
+                // Check for "OggS" signature
+                if (data[offset] != 'O' || data[offset + 1] != 'g' ||
+                    data[offset + 2] != 'g' || data[offset + 3] != 'S')
+                {
+                    offset++;
+                    continue;
+                }
+
+                try
+                {
+                    // Parse header
+                    OggPageHeader header = new OggPageHeader();
+                    header.Header = new byte[] { data[offset], data[offset + 1], data[offset + 2], data[offset + 3] };
+                    header.Version = data[offset + 4];
+                    header.Type = data[offset + 5];
+                    header.GranulePosition = BitConverter.ToUInt64(data, offset + 6);
+                    header.BitstreamSerialNumber = BitConverter.ToUInt32(data, offset + 14);
+                    header.PageSequenceNumber = BitConverter.ToUInt32(data, offset + 18);
+                    header.Checksum = BitConverter.ToUInt32(data, offset + 22);
+                    header.PageSegments = data[offset + 26];
+
+                    int headerSize = 27;
+                    int segmentTableOffset = offset + headerSize;
+
+                    if (segmentTableOffset + header.PageSegments > data.Length)
+                    {
+                        break;
+                    }
+
+                    // Parse segment table
+                    byte[] segmentTable = new byte[header.PageSegments];
+                    Array.Copy(data, segmentTableOffset, segmentTable, 0, header.PageSegments);
+
+                    // Calculate total data size
+                    int totalDataSize = 0;
+                    for (int i = 0; i < header.PageSegments; i++)
+                    {
+                        totalDataSize += segmentTable[i];
+                    }
+
+                    int dataOffset = segmentTableOffset + header.PageSegments;
+                    if (dataOffset + totalDataSize > data.Length)
+                    {
+                        break;
+                    }
+
+                    // Parse segments by interpreting segment table
+                    List<byte[]> segments = new List<byte[]>();
+                    int dataPos = dataOffset;
+                    int segIdx = 0;
+
+                    while (segIdx < header.PageSegments)
+                    {
+                        // Combine segments that span multiple entries
+                        int segLen = 0;
+                        do
+                        {
+                            segLen += segmentTable[segIdx];
+                            segIdx++;
+                        } while (segIdx < header.PageSegments && segmentTable[segIdx - 1] == 0xFF);
+
+                        if (segLen > 0 && dataPos + segLen <= data.Length)
+                        {
+                            byte[] segment = new byte[segLen];
+                            Array.Copy(data, dataPos, segment, 0, segLen);
+                            segments.Add(segment);
+                            dataPos += segLen;
+                        }
+                    }
+
+                    // Create OggPage
+                    OggPage page = new OggPage
+                    {
+                        Header = header,
+                        Segments = segments.ToArray()
+                    };
+
+                    pages.Add(page);
+                    offset = dataPos;
+                }
+                catch (Exception)
+                {
+                    offset++;
+                }
+            }
+
+            return pages;
+        }
+
+        /// <summary>
+        /// Encodes a single track from a file (original encoding logic extracted).
+        /// </summary>
+        private uint EncodeTrackFromFile(string sourceFile, OpusOggWriteStream oggOut, byte[] buffer, int channels, WaveFormat outFormat, string prefixLocation, int track, uint lastIndex, long maxSize, Stream outputData, EncodeCallback cbr)
+        {
+            int bytesReturned = 1;
+            int lastPct = 0;
+
+            /* prepend a audio file for e.g. chapter number */
+            if (prefixLocation != null)
+            {
+                string prefixFile = Path.Combine(prefixLocation, track.ToString("0000") + ".mp3");
+
+                if (!File.Exists(prefixFile))
+                {
+                    throw new FileNotFoundException("Missing prefix file '" + prefixFile + "'");
+                }
+
+                try
+                {
+                    var prefixStream = new CrossPlatformAudioReader(prefixFile);
+                    var prefixResampled = new CrossPlatformResampler(prefixStream, outFormat);
+
+                    while (true)
+                    {
+                        bytesReturned = prefixResampled.Read(buffer, 0, buffer.Length);
+
+                        if (bytesReturned <= 0)
+                        {
+                            break;
+                        }
+
+                        bool isEmpty = (buffer.Where(v => v != 0).Count() == 0);
+                        if (!isEmpty)
+                        {
+                            float[] sampleBuffer = ConvertToFloat(buffer, bytesReturned, channels);
+
+                            if ((outputData.Length + 0x1000 + sampleBuffer.Length) >= maxSize)
+                            {
+                                break;
+                            }
+                            oggOut.WriteSamples(sampleBuffer, 0, sampleBuffer.Length);
+                        }
+                        lastIndex = (uint)oggOut.PageCounter;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    throw new Exception("Failed processing prefix file '" + prefixFile + "'");
+                }
+            }
+
+            /* then the real audio file */
+            string type = sourceFile.Split('.').Last().ToLower();
+            WaveStream stream = null;
+
+            switch (type)
+            {
+                case "ogg":
+                    // Use OpusWaveStream for Ogg files (more efficient for Opus-encoded files)
+                    stream = new OpusWaveStream(File.Open(sourceFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite), 48000, channels);
+                    break;
+
+                case "mp3":
+                case "flac":
+                case "wav":
+                case "m4a":
+                case "aac":
+                case "wma":
+                    // Use CrossPlatformAudioReader for all other formats
+                    stream = new CrossPlatformAudioReader(sourceFile);
+                    break;
+
+                default:
+                    cbr.FileFailed("Unsupported file type: " + type);
+                    return lastIndex;
+            }
+
+            if(stream == null)
+            {
+                cbr.FileFailed("Unknown file type");
+                return lastIndex;
+            }
+
+            var streamResampled = new CrossPlatformResampler(stream, outFormat);
+
+            while (true)
+            {
+                bytesReturned = streamResampled.Read(buffer, 0, buffer.Length);
+
+                if (bytesReturned <= 0)
+                {
+                    break;
+                }
+
+                decimal progress = (decimal)stream.Position / stream.Length;
+
+                if ((int)(progress * 20) != lastPct)
+                {
+                    lastPct = (int)(progress * 20);
+                    cbr.Progress(progress);
+                }
+
+                bool isEmpty = (buffer.Where(v => v != 0).Count() == 0);
+                if (!isEmpty)
+                {
+                    float[] sampleBuffer = ConvertToFloat(buffer, bytesReturned, channels);
+
+                    oggOut.WriteSamples(sampleBuffer, 0, sampleBuffer.Length);
+                }
+                lastIndex = (uint)oggOut.PageCounter;
+            }
+            stream.Close();
+
+            return lastIndex;
         }
 
         private void GenerateAudio(List<string> sourceFiles, uint audioId, int bitRate, bool useVbr, string prefixLocation = null, EncodeCallback cbr = null)
@@ -556,7 +1151,7 @@ namespace TonieFile
                         {
                             case "ogg":
                                 // Use OpusWaveStream for Ogg files (more efficient for Opus-encoded files)
-                                stream = new OpusWaveStream(File.Open(sourceFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite), bitRate, channels);
+                                stream = new OpusWaveStream(File.Open(sourceFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite), samplingRate, channels);
                                 break;
 
                             case "mp3":
@@ -864,6 +1459,113 @@ namespace TonieFile
                 {
                     stream.Write(seg, 0, seg.Length);
                 }
+            }
+        }
+
+        /// <summary>
+        /// Extracts raw Ogg audio data for each chapter/track without decoding.
+        /// Returns byte arrays containing the raw Ogg pages for each track.
+        /// This allows reusing encoded data without quality loss.
+        /// </summary>
+        public List<byte[]> ExtractRawChapterData()
+        {
+            List<byte[]> chapters = new List<byte[]>();
+
+            if (Header.AudioChapters.Length == 0)
+            {
+                // No chapters, return entire audio
+                chapters.Add(Audio);
+                return chapters;
+            }
+
+            // Parse Ogg stream to find actual byte positions of chapter markers
+            // AudioChapters contains page sequence numbers, NOT byte offsets
+            List<int> chapterOffsets = new List<int>();
+            int offset = 0;
+
+            while (offset < Audio.Length - 27)
+            {
+                // Check for Ogg page signature
+                if (Audio[offset] != 'O' || Audio[offset + 1] != 'g' ||
+                    Audio[offset + 2] != 'g' || Audio[offset + 3] != 'S')
+                {
+                    offset++;
+                    continue;
+                }
+
+                // Read page sequence number
+                uint pageSeq = BitConverter.ToUInt32(Audio, offset + 18);
+                byte segmentCount = Audio[offset + 26];
+
+                // Check if this is a chapter marker
+                for (int i = 0; i < Header.AudioChapters.Length; i++)
+                {
+                    if (pageSeq == Header.AudioChapters[i] && chapterOffsets.Count == i)
+                    {
+                        chapterOffsets.Add(offset);
+                        break;
+                    }
+                }
+
+                // Calculate page size to advance offset
+                int segmentTableSize = segmentCount;
+                int dataSize = 0;
+                for (int s = 0; s < segmentCount; s++)
+                {
+                    dataSize += Audio[offset + 27 + s];
+                }
+
+                offset += 27 + segmentTableSize + dataSize;
+
+                // Stop if we found all chapters
+                if (chapterOffsets.Count == Header.AudioChapters.Length)
+                {
+                    break;
+                }
+            }
+
+            // Extract chapter data based on found offsets
+            for (int chapter = 0; chapter < Header.AudioChapters.Length; chapter++)
+            {
+                int startOffset = chapterOffsets[chapter];
+                int endOffset = Audio.Length;
+
+                if (chapter + 1 < chapterOffsets.Count)
+                {
+                    endOffset = chapterOffsets[chapter + 1];
+                }
+
+                int length = endOffset - startOffset;
+                if (length > 0 && startOffset < Audio.Length)
+                {
+                    byte[] chapterData = new byte[length];
+                    Array.Copy(Audio, startOffset, chapterData, 0, length);
+                    chapters.Add(chapterData);
+                }
+            }
+
+            return chapters;
+        }
+
+        /// <summary>
+        /// Writes a raw chapter data to a proper Ogg file with correct headers.
+        /// This creates a valid standalone Ogg file from raw chapter pages.
+        /// </summary>
+        public void WriteChapterToFile(byte[] chapterData, string outputPath, int chapterIndex)
+        {
+            int hdrOffset = 0;
+            OggPage[] metaPages = GetOggHeaders(ref hdrOffset);
+
+            using (FileStream outFile = File.Open(outputPath, FileMode.Create, FileAccess.Write))
+            {
+                // Write Ogg headers (OpusHead and OpusTags)
+                foreach (OggPage page in metaPages)
+                {
+                    page.Write(outFile);
+                }
+
+                // Write the chapter data
+                outFile.Write(chapterData, 0, chapterData.Length);
             }
         }
 

@@ -141,6 +141,10 @@
                                                       Command="{Binding $parent[Window].DataContext.ShowTonieInfoCommand}"
                                                       CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
                                             <Separator/>
+                                            <MenuItem Header="Modify Contents"
+                                                      Command="{Binding $parent[Window].DataContext.ModifyContentsCommand}"
+                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                            <Separator/>
                                             <MenuItem Header="Delete"
                                                       Command="{Binding $parent[Window].DataContext.DeleteSelectedTonieCommand}"
                                                       CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>

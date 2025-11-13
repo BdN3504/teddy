@@ -103,7 +103,7 @@ public partial class PlayerDialogViewModel : ViewModelBase
     {
         try
         {
-            var tonie = TonieAudio.FromFile(_tonieFilePath, readAudio: false);
+            var tonie = TonieAudio.FromFile(_tonieFilePath, readAudio: true);
             var positions = tonie.ParsePositions();
 
             // Get total duration from CalculateStatistics which reads the highest granule
@@ -159,32 +159,49 @@ public partial class PlayerDialogViewModel : ViewModelBase
                 });
             }
 
-            // Add the last track
+            // Add the last track only if it's not the final position marker
+            // (The final position in ParsePositions represents the END of audio, not a track start)
             if (distinctPositions.Count > 0)
             {
                 var lastTrackStart = distinctPositions[distinctPositions.Count - 1];
 
                 // If we have a valid total duration, calculate the last track duration
-                // Otherwise, just show the track without duration
-                string displayText;
+                // Skip if duration would be zero (meaning this is just the final position marker)
                 if (totalDuration > TimeSpan.Zero)
                 {
                     var lastTrackDuration = totalDuration - lastTrackStart;
-                    displayText = $"Track {distinctPositions.Count} ({FormatTime(lastTrackDuration)})";
-                    Console.WriteLine($"[PlayerDialog] Adding last track {distinctPositions.Count}: start={lastTrackStart}, duration={lastTrackDuration}");
+
+                    // Only add if duration is greater than zero
+                    if (lastTrackDuration > TimeSpan.Zero)
+                    {
+                        string displayText = $"Track {distinctPositions.Count} ({FormatTime(lastTrackDuration)})";
+                        Console.WriteLine($"[PlayerDialog] Adding last track {distinctPositions.Count}: start={lastTrackStart}, duration={lastTrackDuration}");
+
+                        Tracks.Add(new TrackInfo
+                        {
+                            TrackNumber = distinctPositions.Count,
+                            Position = lastTrackStart,
+                            DisplayText = displayText
+                        });
+                    }
+                    else
+                    {
+                        Console.WriteLine($"[PlayerDialog] Skipping final position marker at {lastTrackStart} (0 duration)");
+                    }
                 }
                 else
                 {
-                    displayText = $"Track {distinctPositions.Count}";
+                    // No total duration info - add the track without duration display
+                    string displayText = $"Track {distinctPositions.Count}";
                     Console.WriteLine($"[PlayerDialog] Adding last track {distinctPositions.Count} without duration: start={lastTrackStart}");
-                }
 
-                Tracks.Add(new TrackInfo
-                {
-                    TrackNumber = distinctPositions.Count,
-                    Position = lastTrackStart,
-                    DisplayText = displayText
-                });
+                    Tracks.Add(new TrackInfo
+                    {
+                        TrackNumber = distinctPositions.Count,
+                        Position = lastTrackStart,
+                        DisplayText = displayText
+                    });
+                }
             }
         }
         catch (Exception ex)

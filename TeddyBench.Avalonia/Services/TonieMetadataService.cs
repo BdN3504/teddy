@@ -170,6 +170,35 @@ namespace TeddyBench.Avalonia.Services
             }
         }
 
+        /// <summary>
+        /// Updates a custom Tonie's hash key (used when modifying a tonie, which changes its hash).
+        /// If oldHash is in customTonies, removes it and adds newHash with the same title.
+        /// If oldHash is not in customTonies (official tonie), adds newHash with the provided title.
+        /// </summary>
+        public void UpdateTonieHash(string oldHash, string newHash, string title)
+        {
+            oldHash = oldHash.ToUpperInvariant();
+            newHash = newHash.ToUpperInvariant();
+
+            // If the old hash exists, preserve its title
+            if (_customTonies.ContainsKey(oldHash))
+            {
+                string existingTitle = _customTonies[oldHash];
+                _customTonies.Remove(oldHash);
+                _customTonies[newHash] = existingTitle;
+                Console.WriteLine($"Updated custom Tonie hash: {oldHash} -> {newHash} (title: {existingTitle})");
+            }
+            else
+            {
+                // Old hash not in customTonies (it was an official tonie), add new entry
+                _customTonies[newHash] = title;
+                Console.WriteLine($"Added modified official Tonie as custom: {newHash} = {title}");
+            }
+
+            _customToniesModified = true;
+            SaveCustomTonies();
+        }
+
         private void SaveCustomTonies()
         {
             if (!_customToniesModified)
