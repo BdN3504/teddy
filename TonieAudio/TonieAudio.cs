@@ -705,9 +705,12 @@ namespace TonieFile
 
             for (int i = 0; i < pages.Count; i++)
             {
-                // Skip header pages and pages without granule information
+                // Skip header pages and pages without valid granule information
+                // Granule = 0 means "no complete audio frame yet" (partial data)
+                // Granule = ulong.MaxValue means continuation page without timestamp
                 if (pages[i].Header.PageSequenceNumber >= 2 &&
-                    pages[i].Header.GranulePosition != ulong.MaxValue)
+                    pages[i].Header.GranulePosition != ulong.MaxValue &&
+                    pages[i].Header.GranulePosition != 0)
                 {
                     ulong granule = pages[i].Header.GranulePosition;
 
@@ -750,7 +753,10 @@ namespace TonieFile
 
                 // Adjust granule position for continuity
                 // Subtract the track's first granule (make relative to 0), then add cumulative offset
-                if (page.Header.GranulePosition != ulong.MaxValue && firstGranule != ulong.MaxValue)
+                // Skip pages with granule = 0 (incomplete audio) or ulong.MaxValue (continuation)
+                if (page.Header.GranulePosition != ulong.MaxValue &&
+                    page.Header.GranulePosition != 0 &&
+                    firstGranule != ulong.MaxValue)
                 {
                     if (page.Header.GranulePosition >= firstGranule)
                     {
