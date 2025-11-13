@@ -806,12 +806,11 @@ namespace TonieFile
 
             for (int i = 0; i < pages.Count; i++)
             {
-                // Skip header pages and pages without valid granule information
-                // Granule = 0 means "no complete audio frame yet" (partial data)
+                // Skip header pages and continuation pages
                 // Granule = ulong.MaxValue means continuation page without timestamp
+                // Granule = 0 is VALID (means first audio sample) and should be included
                 if (pages[i].Header.PageSequenceNumber >= 2 &&
-                    pages[i].Header.GranulePosition != ulong.MaxValue &&
-                    pages[i].Header.GranulePosition != 0)
+                    pages[i].Header.GranulePosition != ulong.MaxValue)
                 {
                     ulong granule = pages[i].Header.GranulePosition;
 
@@ -852,12 +851,16 @@ namespace TonieFile
                 page.Header.BitstreamSerialNumber = streamSerial;
                 page.Header.PageSequenceNumber = currentPageSeq++;
 
+                // Clear BOS and EOS flags from copied pages
+                // We'll set EOS only on the final page of the entire stream
+                // Preserve bit 0 (continuation flag), clear bits 1 (BOS) and 2 (EOS)
+                page.Header.Type = (byte)(page.Header.Type & 1);
+
                 // Adjust granule position for continuity
                 // Subtract the track's first granule (make relative to 0), then add cumulative offset
-                // Skip pages with granule = 0 (incomplete audio) or ulong.MaxValue (continuation)
-                if (page.Header.GranulePosition != ulong.MaxValue &&
-                    page.Header.GranulePosition != 0 &&
-                    firstGranule != ulong.MaxValue)
+                // Only skip continuation pages (granule = ulong.MaxValue)
+                // Granule = 0 is VALID (first audio sample) and should be adjusted
+                if (page.Header.GranulePosition != ulong.MaxValue && firstGranule != ulong.MaxValue)
                 {
                     if (page.Header.GranulePosition >= firstGranule)
                     {
