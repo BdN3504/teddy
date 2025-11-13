@@ -12,6 +12,13 @@ Teddy is a tool for working with Tonie audio box files. It can dump existing aud
 - .NET 8.0 SDK or later
 - FFmpeg (required for audio resampling on Linux/macOS)
 - fatattr (required for LIVE flag management on Linux: `sudo apt install fatattr`)
+- VLC media player libraries (required for TeddyBench.Avalonia audio playback):
+  - **Windows**: Bundled via VideoLAN.LibVLC.Windows NuGet package (no installation required)
+  - **macOS**: Bundled via VideoLAN.LibVLC.Mac NuGet package (no installation required)
+  - **Linux**: Install system-wide via package manager:
+    - Debian/Ubuntu: `sudo apt install vlc libvlc-dev`
+    - Fedora: `sudo dnf install vlc vlc-devel`
+    - Arch: `sudo pacman -S vlc`
 - Windows OS (required for TeddyBench GUI application only)
 
 ### Build Commands
@@ -75,7 +82,7 @@ TeddyBench ─────────────┘                           
 
 - **TeddyBench.Avalonia** - Cross-platform GUI application (.NET 8.0) with Avalonia UI
   - Modern MVVM architecture with CommunityToolkit.Mvvm
-  - Key features: file browsing with icon view, metadata display, decode, show info, LIVE flag management, delete, custom tonie creation
+  - Key features: file browsing with icon view, metadata display, decode, show info, LIVE flag management, delete, custom tonie creation, audio playback
   - Automatically downloads tonies.json metadata database on first run from https://api.revvox.de/tonies.json
   - Downloads and caches Tonie images from CDN (stored in cache/ directory)
   - Auto-detects Toniebox SD cards and navigates to CONTENT folder
@@ -111,7 +118,16 @@ TeddyBench ─────────────┘                           
       - Windows: Uses FileInfo.Attributes API
       - macOS: Uses `fatattr` command (same as Linux)
     - Implementation matches Windows TeddyBench behavior: single-file toggle, bulk-only-remove
+  - Audio Player functionality:
+    - Built-in audio playback for Tonie files using LibVLCSharp
+    - Play/pause/resume controls with visual feedback
+    - Stop button to end playback
+    - Real-time position tracking
+    - Duration display with time formatting (m:ss or h:mm:ss)
+    - Cross-platform audio output (Windows, Linux, macOS)
+    - Implementation: AudioPlayerService.cs using LibVLC media engine
   - Key services:
+    - AudioPlayerService (cross-platform audio playback using LibVLCSharp)
     - TonieMetadataService (handles metadata, image downloads, and customTonies.json management)
     - PathToBitmapConverter (converts file paths to displayable images)
   - Configuration via appsettings.json:
@@ -129,6 +145,10 @@ TeddyBench ─────────────┘                           
 - **Concentus** (.NET 8.0) - Opus audio codec implementation
 - **Concentus.Oggfile** (.NET 8.0) - Ogg container format handling
 - **ID3** (.NET 8.0) - ID3 tag parsing for MP3 metadata
+- **LibVLCSharp** (.NET 8.0) - VLC media player bindings for cross-platform audio/video playback
+  - Used in TeddyBench.Avalonia for audio playback functionality
+  - Native libraries bundled for Windows (VideoLAN.LibVLC.Windows) and macOS (VideoLAN.LibVLC.Mac)
+  - Linux requires system VLC installation (no bundled package available)
 
 ### Tonie File Format
 

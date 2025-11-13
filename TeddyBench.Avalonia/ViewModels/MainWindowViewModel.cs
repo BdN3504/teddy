@@ -113,6 +113,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             UpdateSelectedFileDetails(value);
         }
+
         OnPropertyChanged(nameof(HasSelectedFile));
     }
 
@@ -929,6 +930,29 @@ public partial class MainWindowViewModel : ViewModelBase
         if (CurrentSortOption != null)
         {
             _configService.SaveSortOption(CurrentSortOption.Option);
+        }
+    }
+
+    [RelayCommand]
+    private async Task PlayTonie(TonieFileItem? file)
+    {
+        if (file == null)
+        {
+            StatusText = "Please select a file first";
+            return;
+        }
+
+        try
+        {
+            var dialog = new Dialogs.PlayerDialog();
+            var viewModel = new PlayerDialogViewModel(file.FilePath, file.DisplayName, dialog);
+            dialog.DataContext = viewModel;
+            await dialog.ShowDialog(_window);
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error opening player: {ex.Message}";
+            Console.WriteLine($"Error: {ex}");
         }
     }
 }

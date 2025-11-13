@@ -1,0 +1,79 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TeddyBench.Avalonia.ViewModels"
+        x:Class="TeddyBench.Avalonia.Dialogs.PlayerDialog"
+        x:DataType="vm:PlayerDialogViewModel"
+        Title="{Binding Title}"
+        Width="600" Height="500"
+        CanResize="True"
+        WindowStartupLocation="CenterOwner">
+
+    <Grid Margin="20">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="*"/>
+            <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <!-- Playback Controls -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,20">
+            <Button Content="{Binding PlayPauseButtonText}"
+                    Command="{Binding PlayPauseCommand}"
+                    Width="80"/>
+            <Button Content="Stop"
+                    Command="{Binding StopCommand}"
+                    IsEnabled="{Binding CanStop}"
+                    Width="80"/>
+        </StackPanel>
+
+        <!-- Current Position Display -->
+        <TextBlock Grid.Row="1"
+                   Text="{Binding CurrentPositionText}"
+                   FontFamily="Consolas"
+                   FontSize="14"
+                   HorizontalAlignment="Center"
+                   Margin="0,0,0,20"/>
+
+        <!-- Track List -->
+        <Border Grid.Row="2"
+                BorderBrush="#CCCCCC"
+                BorderThickness="1"
+                Padding="10">
+            <ScrollViewer>
+                <StackPanel>
+                    <TextBlock Text="Tracks:" FontWeight="Bold" Margin="0,0,0,10"/>
+                    <ItemsControl ItemsSource="{Binding Tracks}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:TrackInfo">
+                                <Button Content="{Binding DisplayText}"
+                                        Command="{Binding $parent[Window].((vm:PlayerDialogViewModel)DataContext).SeekToTrackCommand}"
+                                        CommandParameter="{Binding Position}"
+                                        HorizontalAlignment="Stretch"
+                                        HorizontalContentAlignment="Left"
+                                        Background="Transparent"
+                                        BorderThickness="0"
+                                        Padding="5"
+                                        Margin="0,2,0,2">
+                                    <Button.Styles>
+                                        <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                            <Setter Property="Background" Value="#E0E0E0"/>
+                                        </Style>
+                                    </Button.Styles>
+                                </Button>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+
+        <!-- Close Button -->
+        <Button Grid.Row="3"
+                Content="Close"
+                Command="{Binding CloseCommand}"
+                HorizontalAlignment="Right"
+                Width="100"
+                Margin="0,20,0,0"/>
+    </Grid>
+</Window>
