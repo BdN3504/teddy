@@ -1,5 +1,4 @@
 using System;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using TonieFile;
@@ -46,14 +45,8 @@ public class TonieFileService
     /// <returns>The encoded Tonie file content and hash</returns>
     public (byte[] FileContent, string Hash) EncodeCustomTonie(string[] audioPaths, uint audioId, int bitRate = 96)
     {
-        var sw = Stopwatch.StartNew();
-        Console.WriteLine($"[ENCODING TIMING] Starting regular encoding with {audioPaths.Length} track(s)");
-        Console.WriteLine($"[ENCODING TIMING] All {audioPaths.Length} tracks will be encoded from source files");
-
         bool useVbr = false;
         TonieAudio generated = new TonieAudio(audioPaths, audioId, bitRate * 1000, useVbr, null);
-
-        Console.WriteLine($"[ENCODING TIMING] Encoding completed in {sw.ElapsedMilliseconds}ms");
 
         // Get the hash for customTonies.json
         string hash = BitConverter.ToString(generated.Header.Hash).Replace("-", "");

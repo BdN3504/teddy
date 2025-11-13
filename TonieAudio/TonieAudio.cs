@@ -408,7 +408,6 @@ namespace TonieFile
                         .Concat(Directory.GetFiles(item, "*.wma"))
                         .OrderBy(n => n).ToArray();
                     string[] sourceFiles = filesInDir;
-                    bool failed = false;
 
                     try
                     {
@@ -418,23 +417,12 @@ namespace TonieFile
 
                         if (sourceFiles.Length < filesInDir.Length)
                         {
-                            failed = true;
                             sourceFiles = filesInDir;
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception)
                     {
-                        failed = true;
-                    }
-
-                    if (failed)
-                    {
-                        Console.WriteLine("[INFO] Tried to sort using MP3 tag for track number, but not all files in");
-                        Console.WriteLine("[INFO] this folder have valid ID3 tags. ");
-                        Console.WriteLine("[INFO] Please make sure all files have correct ID3 fields to have them sorted correctly.");
-                        Console.WriteLine("[INFO] ");
-                        Console.WriteLine("[INFO] Sorting files by their filename.");
-                        Console.WriteLine("");
+                        // Failed to sort by MP3 tags - already sorted by filename
                     }
 
                     FileList.AddRange(sourceFiles);
@@ -777,8 +765,6 @@ namespace TonieFile
             // Write the modified page back
             outputData.Seek(lastPageOffset, SeekOrigin.Begin);
             page.Write(outputData);
-
-            Console.WriteLine($"[INFO] Set EOS flag on last page (offset: 0x{lastPageOffset:X})");
         }
 
         /// <summary>

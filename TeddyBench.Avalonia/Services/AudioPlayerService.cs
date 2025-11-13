@@ -87,8 +87,6 @@ public class AudioPlayerService : IDisposable
     {
         try
         {
-            Console.WriteLine($"[AudioPlayer] Starting playback of: {tonieFilePath}");
-
             if (_libVLC == null)
             {
                 OnPlaybackError("LibVLC not initialized");
@@ -99,7 +97,6 @@ public class AudioPlayerService : IDisposable
             Stop();
 
             // Load the Tonie file
-            Console.WriteLine("[AudioPlayer] Loading Tonie file...");
             var tonie = TonieAudio.FromFile(tonieFilePath, readAudio: true);
             if (tonie.Audio == null || tonie.Audio.Length == 0)
             {
@@ -107,13 +104,9 @@ public class AudioPlayerService : IDisposable
                 return;
             }
 
-            Console.WriteLine($"[AudioPlayer] Audio data loaded: {tonie.Audio.Length} bytes");
-
             // Create a temporary file for the audio (LibVLC works best with files)
             var tempFile = Path.GetTempFileName();
             File.WriteAllBytes(tempFile, tonie.Audio);
-
-            Console.WriteLine($"[AudioPlayer] Created temp file: {tempFile}");
 
             // Create media and player
             var media = new Media(_libVLC, tempFile, FromType.FromPath);
@@ -147,11 +140,9 @@ public class AudioPlayerService : IDisposable
 
             // Start playback
             _mediaPlayer.Play();
-            Console.WriteLine("[AudioPlayer] Playback started");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AudioPlayer] ERROR: {ex}");
             OnPlaybackError($"Failed to start playback: {ex.Message}");
             Stop();
         }
@@ -162,12 +153,10 @@ public class AudioPlayerService : IDisposable
     /// </summary>
     public void Pause()
     {
-        Console.WriteLine($"[AudioPlayer] Pause called. Current state: {State}");
         if (_mediaPlayer != null && State == PlaybackState.Playing)
         {
             _mediaPlayer.Pause();
             StopPositionTimer();
-            Console.WriteLine("[AudioPlayer] Paused");
         }
     }
 
@@ -176,12 +165,10 @@ public class AudioPlayerService : IDisposable
     /// </summary>
     public void Resume()
     {
-        Console.WriteLine($"[AudioPlayer] Resume called. Current state: {State}");
         if (_mediaPlayer != null && State == PlaybackState.Paused)
         {
             _mediaPlayer.Play();
             StartPositionTimer();
-            Console.WriteLine("[AudioPlayer] Resumed");
         }
     }
 
@@ -190,8 +177,6 @@ public class AudioPlayerService : IDisposable
     /// </summary>
     public void Stop()
     {
-        Console.WriteLine($"[AudioPlayer] Stop called. Current state: {State}");
-
         StopPositionTimer();
 
         if (_mediaPlayer != null)
@@ -203,7 +188,6 @@ public class AudioPlayerService : IDisposable
         }
 
         SetState(PlaybackState.Stopped);
-        Console.WriteLine("[AudioPlayer] Stopped");
     }
 
     /// <summary>
@@ -214,19 +198,15 @@ public class AudioPlayerService : IDisposable
     {
         if (_mediaPlayer == null || State == PlaybackState.Stopped)
         {
-            Console.WriteLine($"[AudioPlayer] Seek ignored - player: {_mediaPlayer != null}, state: {State}");
             return;
         }
 
         try
         {
-            Console.WriteLine($"[AudioPlayer] Seeking to {position}");
             _mediaPlayer.Time = (long)position.TotalMilliseconds;
-            Console.WriteLine($"[AudioPlayer] Seek complete");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[AudioPlayer] Seek error: {ex}");
             OnPlaybackError($"Failed to seek: {ex.Message}");
         }
     }

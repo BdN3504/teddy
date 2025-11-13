@@ -42,7 +42,6 @@ public partial class PlayerDialogViewModel : ViewModelBase
                 // If we have a pending seek and playback just started, apply it now
                 if (state == PlaybackState.Playing && _pendingSeekPosition.HasValue)
                 {
-                    Console.WriteLine($"[PlayerDialog] Applying pending seek to {_pendingSeekPosition.Value}");
                     _audioPlayer.Seek(_pendingSeekPosition.Value);
                     _pendingSeekPosition = null;
                 }
@@ -112,11 +111,10 @@ public partial class PlayerDialogViewModel : ViewModelBase
             {
                 tonie.CalculateStatistics(out _, out _, out _, out _, out _, out _, out ulong highestGranule);
                 totalDuration = TimeSpan.FromSeconds((double)highestGranule / 48000.0);
-                Console.WriteLine($"[PlayerDialog] Total duration from highest granule: {totalDuration} (granule: {highestGranule})");
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"[PlayerDialog] Error calculating statistics: {ex.Message}");
+                // Error calculating statistics - continue with zero duration
             }
 
             // Convert granules to TimeSpan and deduplicate
@@ -135,12 +133,6 @@ public partial class PlayerDialogViewModel : ViewModelBase
                 distinctPositions.Add(timeSpan);
             }
 
-            Console.WriteLine($"[PlayerDialog] Distinct positions count: {distinctPositions.Count}, Total duration: {totalDuration}");
-            for (int i = 0; i < distinctPositions.Count; i++)
-            {
-                Console.WriteLine($"[PlayerDialog] Distinct position {i}: {distinctPositions[i]}");
-            }
-
             // Add tracks based on distinct positions with calculated durations
             // All tracks except the last one - calculate duration from next track start
             for (int i = 0; i < distinctPositions.Count - 1; i++)
@@ -148,8 +140,6 @@ public partial class PlayerDialogViewModel : ViewModelBase
                 var trackStart = distinctPositions[i];
                 var trackEnd = distinctPositions[i + 1];
                 var trackDuration = trackEnd - trackStart;
-
-                Console.WriteLine($"[PlayerDialog] Adding track {i + 1}: start={trackStart}, end={trackEnd}, duration={trackDuration}");
 
                 Tracks.Add(new TrackInfo
                 {
@@ -175,7 +165,6 @@ public partial class PlayerDialogViewModel : ViewModelBase
                     if (lastTrackDuration > TimeSpan.Zero)
                     {
                         string displayText = $"Track {distinctPositions.Count} ({FormatTime(lastTrackDuration)})";
-                        Console.WriteLine($"[PlayerDialog] Adding last track {distinctPositions.Count}: start={lastTrackStart}, duration={lastTrackDuration}");
 
                         Tracks.Add(new TrackInfo
                         {
@@ -184,16 +173,11 @@ public partial class PlayerDialogViewModel : ViewModelBase
                             DisplayText = displayText
                         });
                     }
-                    else
-                    {
-                        Console.WriteLine($"[PlayerDialog] Skipping final position marker at {lastTrackStart} (0 duration)");
-                    }
                 }
                 else
                 {
                     // No total duration info - add the track without duration display
                     string displayText = $"Track {distinctPositions.Count}";
-                    Console.WriteLine($"[PlayerDialog] Adding last track {distinctPositions.Count} without duration: start={lastTrackStart}");
 
                     Tracks.Add(new TrackInfo
                     {
@@ -204,9 +188,8 @@ public partial class PlayerDialogViewModel : ViewModelBase
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine($"[PlayerDialog] Error loading tracks: {ex.Message}");
             // If we can't load tracks, just show one entry
             Tracks.Add(new TrackInfo
             {
@@ -241,9 +224,9 @@ public partial class PlayerDialogViewModel : ViewModelBase
                 OnPropertyChanged(nameof(DurationText));
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine($"[PlayerDialog] Playback error: {ex}");
+            // Playback error
         }
     }
 
@@ -256,9 +239,9 @@ public partial class PlayerDialogViewModel : ViewModelBase
             CurrentPosition = TimeSpan.Zero;
             PositionSeconds = 0;
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine($"[PlayerDialog] Stop error: {ex}");
+            // Stop error
         }
     }
 
@@ -269,9 +252,9 @@ public partial class PlayerDialogViewModel : ViewModelBase
         {
             _audioPlayer.Seek(TimeSpan.FromSeconds(seconds));
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine($"[PlayerDialog] Seek error: {ex}");
+            // Seek error
         }
     }
 
@@ -283,7 +266,6 @@ public partial class PlayerDialogViewModel : ViewModelBase
             // If stopped, start playback first and queue the seek
             if (IsStopped)
             {
-                Console.WriteLine($"[PlayerDialog] Starting playback with pending seek to {position}");
                 _pendingSeekPosition = position;
                 _audioPlayer.Play(_tonieFilePath);
 
@@ -295,13 +277,12 @@ public partial class PlayerDialogViewModel : ViewModelBase
             else
             {
                 // Already playing, seek immediately
-                Console.WriteLine($"[PlayerDialog] Seeking immediately to {position}");
                 _audioPlayer.Seek(position);
             }
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            Console.WriteLine($"[PlayerDialog] Seek to track error: {ex}");
+            // Seek to track error
         }
     }
 
