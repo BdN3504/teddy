@@ -26,8 +26,18 @@
 
     <TextBox Text="{Binding RfidUid}"
              Watermark="e.g., 0EED5104"
-             Margin="0,0,0,10"
+             MaxLength="8"
+             Margin="0,0,0,5"
              Name="RfidInput"/>
+
+    <!-- Error message display -->
+    <TextBlock Text="{Binding ErrorMessage}"
+               Foreground="Red"
+               FontWeight="SemiBold"
+               TextWrapping="Wrap"
+               MinHeight="20"
+               Margin="0,0,0,10"
+               IsVisible="{Binding ErrorMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
 
     <StackPanel Orientation="Horizontal"
                 HorizontalAlignment="Center">
@@ -35,6 +45,7 @@
               Width="80"
               Command="{Binding OkCommand}"
               Click="OnOkClick"
+              IsEnabled="{Binding CanSubmit}"
               IsDefault="True"/>
       <Button Content="Cancel"
               Width="80"

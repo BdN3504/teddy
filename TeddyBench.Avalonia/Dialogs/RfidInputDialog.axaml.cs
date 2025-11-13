@@ -13,9 +13,9 @@ public partial class RfidInputDialog : Window
         InitializeComponent();
     }
 
-    public RfidInputDialog(string rfidPrefix) : this()
+    public RfidInputDialog(string rfidPrefix, string currentDirectory) : this()
     {
-        DataContext = new RfidInputDialogViewModel(rfidPrefix);
+        DataContext = new RfidInputDialogViewModel(rfidPrefix, currentDirectory);
     }
 
     private void InitializeComponent()
@@ -44,21 +44,41 @@ public partial class RfidInputDialog : Window
             var text = _rfidInput.Text;
             if (!string.IsNullOrEmpty(text))
             {
-                var upperText = text.ToUpper();
-                if (text != upperText)
+                // Filter to only hex characters and convert to uppercase
+                var filteredText = FilterToHexAndUppercase(text);
+
+                if (text != filteredText)
                 {
                     var caretIndex = _rfidInput.CaretIndex;
-                    _rfidInput.Text = upperText;
+                    _rfidInput.Text = filteredText;
                     _rfidInput.CaretIndex = caretIndex;
 
                     // Update the ViewModel
                     if (DataContext is RfidInputDialogViewModel vm)
                     {
-                        vm.RfidUid = upperText;
+                        vm.RfidUid = filteredText;
                     }
                 }
             }
         }
+    }
+
+    private static string FilterToHexAndUppercase(string input)
+    {
+        var result = new System.Text.StringBuilder(input.Length);
+        foreach (char c in input)
+        {
+            if ((c >= '0' && c <= '9') || (c >= 'A' && c <= 'F'))
+            {
+                result.Append(c);
+            }
+            else if (c >= 'a' && c <= 'f')
+            {
+                result.Append(char.ToUpper(c));
+            }
+            // Skip any non-hex characters
+        }
+        return result.ToString();
     }
 
     private void OnOkClick(object? sender, global::Avalonia.Interactivity.RoutedEventArgs e)

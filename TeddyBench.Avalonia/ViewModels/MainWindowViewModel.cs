@@ -197,7 +197,7 @@ public partial class MainWindowViewModel : ViewModelBase
             string rfidPrefix = _configService.LoadRfidPrefix();
 
             // Get RFID UID from user using RfidInputDialog
-            var rfidDialog = new RfidInputDialog(rfidPrefix);
+            var rfidDialog = new RfidInputDialog(rfidPrefix, CurrentDirectory);
             var rfidResult = await rfidDialog.ShowDialog<bool?>(_window);
 
             if (rfidResult != true)
