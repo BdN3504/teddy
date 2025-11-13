@@ -597,7 +597,7 @@ namespace TonieFile
             string tempName = Path.GetTempFileName();
             List<uint> chapters = new List<uint>();
 
-            using (FileStream outputData = new FileStream(tempName, FileMode.Create, FileAccess.Write))
+            using (FileStream outputData = new FileStream(tempName, FileMode.Create, FileAccess.ReadWrite))
             {
                 // Get headers from the original audio data or first track
                 // If we have originalAudioData, use it (contains proper OpusHead/OpusTags headers)
@@ -666,6 +666,10 @@ namespace TonieFile
                     pageSeq = newPageSeq;
                     cumulativeGranule = newGranule;
                 }
+
+                // Mark the last page with EOS (end-of-stream) flag
+                // This is CRITICAL for VLC to know when audio ends
+                SetEosOnLastPage(outputData);
             }
 
             Audio = File.ReadAllBytes(tempName);
@@ -678,6 +682,103 @@ namespace TonieFile
             Header.Padding = new byte[0];
 
             File.Delete(tempName);
+        }
+
+        /// <summary>
+        /// Sets the EOS (end-of-stream) flag on the last Ogg page in the stream.
+        /// This tells decoders like VLC that the stream has ended.
+        /// </summary>
+        private void SetEosOnLastPage(Stream outputData)
+        {
+            // Find the last Ogg page by scanning backwards
+            long streamLength = outputData.Length;
+            if (streamLength < 0x200 + 27) // Headers + minimum page size
+            {
+                return; // Stream too short
+            }
+
+            // Read the last part of the file into a buffer (last 64KB should be enough)
+            int bufferSize = (int)Math.Min(65536, streamLength - 0x200);
+            byte[] buffer = new byte[bufferSize];
+            outputData.Seek(streamLength - bufferSize, SeekOrigin.Begin);
+            outputData.Read(buffer, 0, bufferSize);
+
+            // Scan backwards for Ogg page signatures
+            long lastPageOffset = -1;
+            for (int i = bufferSize - 27; i >= 0; i--)
+            {
+                if (buffer[i] == 'O' && buffer[i + 1] == 'g' &&
+                    buffer[i + 2] == 'g' && buffer[i + 3] == 'S')
+                {
+                    // Found an Ogg page
+                    lastPageOffset = (streamLength - bufferSize) + i;
+                    break;
+                }
+            }
+
+            if (lastPageOffset < 0)
+            {
+                Console.WriteLine("[WARNING] Could not find last Ogg page to set EOS flag");
+                return;
+            }
+
+            // Seek to the last page and parse it
+            outputData.Seek(lastPageOffset, SeekOrigin.Begin);
+            byte[] pageHeader = new byte[27];
+            outputData.Read(pageHeader, 0, 27);
+
+            OggPageHeader header = new OggPageHeader();
+            header.Header = new byte[] { pageHeader[0], pageHeader[1], pageHeader[2], pageHeader[3] };
+            header.Version = pageHeader[4];
+            header.Type = pageHeader[5];
+            header.GranulePosition = BitConverter.ToUInt64(pageHeader, 6);
+            header.BitstreamSerialNumber = BitConverter.ToUInt32(pageHeader, 14);
+            header.PageSequenceNumber = BitConverter.ToUInt32(pageHeader, 18);
+            header.Checksum = BitConverter.ToUInt32(pageHeader, 22);
+            header.PageSegments = pageHeader[26];
+
+            // Read segment table and data
+            byte[] segmentTable = new byte[header.PageSegments];
+            outputData.Read(segmentTable, 0, header.PageSegments);
+
+            int totalDataSize = 0;
+            for (int i = 0; i < header.PageSegments; i++)
+            {
+                totalDataSize += segmentTable[i];
+            }
+
+            // Parse segments
+            List<byte[]> segments = new List<byte[]>();
+            int segIdx = 0;
+            while (segIdx < header.PageSegments)
+            {
+                int segLen = 0;
+                do
+                {
+                    segLen += segmentTable[segIdx];
+                    segIdx++;
+                } while (segIdx < header.PageSegments && segmentTable[segIdx - 1] == 0xFF);
+
+                byte[] segment = new byte[segLen];
+                outputData.Read(segment, 0, segLen);
+                segments.Add(segment);
+            }
+
+            // Create OggPage and set EOS flag
+            OggPage page = new OggPage
+            {
+                Header = header,
+                Segments = segments.ToArray()
+            };
+
+            // Set EOS flag (Type = 4)
+            page.Header.Type = 4;
+
+            // Write the modified page back
+            outputData.Seek(lastPageOffset, SeekOrigin.Begin);
+            page.Write(outputData);
+
+            Console.WriteLine($"[INFO] Set EOS flag on last page (offset: 0x{lastPageOffset:X})");
         }
 
         /// <summary>

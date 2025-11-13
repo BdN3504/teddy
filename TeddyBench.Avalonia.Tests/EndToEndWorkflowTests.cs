@@ -1,4 +1,5 @@
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
@@ -53,9 +54,15 @@ public class EndToEndWorkflowTests : IDisposable
 
     private void CreateTestTonieFile(string path)
     {
-        // Get test data files
-        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track1.mp3");
-        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track2.mp3");
+        var sw = Stopwatch.StartNew();
+        Console.WriteLine("[TIMING] CreateTestTonieFile: Starting...");
+
+        // Get test data files - using real MP3 files for realistic testing
+        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "gold.mp3");
+        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "gold_flume_remix.mp3");
+
+        Console.WriteLine($"[TIMING] CreateTestTonieFile: Creating TonieAudio with 2 tracks...");
+        var createStart = Stopwatch.StartNew();
 
         // Create a tonie file using TonieAudio
         var tonie = new TonieAudio(
@@ -66,8 +73,11 @@ public class EndToEndWorkflowTests : IDisposable
             prefixLocation: null
         );
 
+        Console.WriteLine($"[TIMING] CreateTestTonieFile: TonieAudio creation took {createStart.ElapsedMilliseconds}ms");
+
         // Write the file
         File.WriteAllBytes(path, tonie.FileContent);
+        Console.WriteLine($"[TIMING] CreateTestTonieFile: Total time {sw.ElapsedMilliseconds}ms");
 
         // Calculate hash and add to customTonies.json
         using var sha1 = SHA1.Create();
@@ -87,13 +97,18 @@ public class EndToEndWorkflowTests : IDisposable
     [AvaloniaFact]
     public async Task CompleteWorkflow_CreateDeleteModifyAndPlayTonie_ShouldSucceed()
     {
+        var testSw = Stopwatch.StartNew();
+        Console.WriteLine("[TIMING] Test started");
+
         // Arrange
         var window = new Window();
         var viewModel = new MainWindowViewModel(window);
 
         // Step 1: Wait for JSON metadata to be loaded
         Console.WriteLine("Step 1: Waiting for metadata to load...");
-        await Task.Delay(5000); // Give time for InitializeMetadataAsync to complete
+        var stepSw = Stopwatch.StartNew();
+        await Task.Delay(2000); // Give time for InitializeMetadataAsync to complete
+        Console.WriteLine($"[TIMING] Step 1 (metadata wait): {stepSw.ElapsedMilliseconds}ms");
         Console.WriteLine($"Status after waiting: {viewModel.StatusText}");
         // Accept either "Ready" or "downloaded" status
         Assert.True(
@@ -136,14 +151,16 @@ public class EndToEndWorkflowTests : IDisposable
 
         // Step 6: Add a custom tonie with track1 and track2
         Console.WriteLine("Step 6: Adding custom tonie with 2 tracks...");
-        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track1.mp3");
-        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track2.mp3");
+        stepSw.Restart();
+        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "gold.mp3");
+        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "gold_flume_remix.mp3");
 
         var newTonieFile = await SimulateAddCustomTonie(
             viewModel,
             rfidUid: "0EED5104",
             audioPaths: new[] { track1Path, track2Path }
         );
+        Console.WriteLine($"[TIMING] Step 6 (add custom tonie): {stepSw.ElapsedMilliseconds}ms");
 
         // Verify new tonie exists
         Assert.Single(viewModel.TonieFiles);
@@ -156,11 +173,13 @@ public class EndToEndWorkflowTests : IDisposable
 
         // Step 8: Open modify dialog and add track3
         Console.WriteLine("Step 8: Opening modify dialog and adding track3...");
-        var track3Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track3.mp3");
+        var track3Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "titus_wacht_auf.mp3");
 
         // Step 9: Press encode button and wait for encoding to complete
         Console.WriteLine("Step 9: Pressing encode button and waiting for encoding to complete...");
+        stepSw.Restart();
         await SimulateModifyTonieWithEncode(viewModel, newTonie, track3Path);
+        Console.WriteLine($"[TIMING] Step 9 (modify tonie with encode): {stepSw.ElapsedMilliseconds}ms");
         Console.WriteLine("Encoding completed successfully!");
 
         // Step 10: Refresh directory and select the modified tonie
@@ -186,6 +205,7 @@ public class EndToEndWorkflowTests : IDisposable
         // Verify track durations match source files
         await VerifyTrackDurations(newTonieFile, new[] { track1Path, track2Path, track3Path });
 
+        Console.WriteLine($"[TIMING] Total test time: {testSw.ElapsedMilliseconds}ms ({testSw.Elapsed.TotalSeconds:F1}s)");
         Console.WriteLine("Test completed successfully! All 3 tracks verified.");
     }
 
@@ -290,6 +310,11 @@ public class EndToEndWorkflowTests : IDisposable
             Assert.InRange(diff, 0, 2);
         }
 
+        // Redirect stderr to capture VLC error messages
+        var originalError = Console.Error;
+        var errorCapture = new System.IO.StringWriter();
+        Console.SetError(errorCapture);
+
         // Test playback of all tracks
         // Note: LibVLC may not work in headless test environment
         try
@@ -301,13 +326,35 @@ public class EndToEndWorkflowTests : IDisposable
 
                 // Simulate clicking the track
                 playerViewModel.SeekToTrackCommand.Execute(trackInfo.Position);
-                await Task.Delay(500);
+
+                // Wait 1 second for playback to start and stabilize
+                await Task.Delay(1000);
+
+                // Check for VLC errors
+                var errorOutput = errorCapture.ToString();
+                if (errorOutput.Contains("buffer deadlock prevented") ||
+                    errorOutput.Contains("Timestamp conversion failed"))
+                {
+                    Assert.Fail($"VLC error detected during track {i + 1} playback:\n{errorOutput}");
+                }
 
                 // Verify playback state (or at least that it didn't crash)
                 Assert.True(true, $"Track {i + 1} playback started without crashing");
             }
 
             Console.WriteLine($"Successfully tested playback of all {trackPaths.Length} tracks");
+
+            // Check final error output
+            var finalErrors = errorCapture.ToString();
+            if (finalErrors.Contains("buffer deadlock prevented") ||
+                finalErrors.Contains("Timestamp conversion failed"))
+            {
+                Console.WriteLine($"WARNING: VLC errors detected:\n{finalErrors}");
+            }
+            else
+            {
+                Console.WriteLine("✓ No VLC errors detected during playback");
+            }
         }
         catch (Exception ex)
         {
@@ -315,6 +362,9 @@ public class EndToEndWorkflowTests : IDisposable
         }
         finally
         {
+            // Restore stderr
+            Console.SetError(originalError);
+
             // Clean up
             playerViewModel.Cleanup();
         }
@@ -322,9 +372,15 @@ public class EndToEndWorkflowTests : IDisposable
 
     private Task SimulateModifyTonieWithEncode(MainWindowViewModel viewModel, TonieFileItem file, string additionalTrackPath)
     {
+        var totalSw = Stopwatch.StartNew();
+        Console.WriteLine("[TIMING] SimulateModifyTonieWithEncode: Starting...");
+
         Console.WriteLine("  - Reading original tonie...");
+        var sw = Stopwatch.StartNew();
         // Read original tonie
         var originalAudio = TonieAudio.FromFile(file.FilePath, readAudio: true);
+        Console.WriteLine($"[TIMING] Read original tonie: {sw.ElapsedMilliseconds}ms");
+
         var oldHash = BitConverter.ToString(originalAudio.Header.Hash).Replace("-", "");
         var audioId = originalAudio.Header.AudioId;
 
@@ -335,7 +391,9 @@ public class EndToEndWorkflowTests : IDisposable
         try
         {
             Console.WriteLine("  - Decoding original tracks...");
+            sw.Restart();
             originalAudio.DumpAudioFiles(tempDir, Path.GetFileName(file.FilePath), false, Array.Empty<string>(), null);
+            Console.WriteLine($"[TIMING] Decode original tracks: {sw.ElapsedMilliseconds}ms");
 
             // Get decoded files
             var decodedFiles = Directory.GetFiles(tempDir, "*.ogg")
@@ -372,24 +430,31 @@ public class EndToEndWorkflowTests : IDisposable
             });
 
             Console.WriteLine("  - Encoding tonie (this simulates pressing the Encode button)...");
+            sw.Restart();
             var (fileContent, newHash) = hybridEncoder.EncodeHybridTonie(
                 trackSources,
                 audioId,
                 file.FilePath,
                 96000 // 96 kbps
             );
+            Console.WriteLine($"[TIMING] Hybrid encoding: {sw.ElapsedMilliseconds}ms");
 
             Console.WriteLine("  - Writing modified tonie file...");
+            sw.Restart();
             // Write the modified file
             File.WriteAllBytes(file.FilePath, fileContent);
+            Console.WriteLine($"[TIMING] Write file: {sw.ElapsedMilliseconds}ms");
 
             Console.WriteLine("  - Updating metadata...");
+            sw.Restart();
             // Update metadata
             var metadataService = new TonieMetadataService();
             metadataService.UpdateTonieHash(oldHash, newHash, file.DisplayName);
+            Console.WriteLine($"[TIMING] Update metadata: {sw.ElapsedMilliseconds}ms");
 
             // Clean up temp directory
             Directory.Delete(tempDir, true);
+            Console.WriteLine($"[TIMING] SimulateModifyTonieWithEncode: Total time {totalSw.ElapsedMilliseconds}ms");
             Console.WriteLine("  - Modification complete!");
         }
         catch

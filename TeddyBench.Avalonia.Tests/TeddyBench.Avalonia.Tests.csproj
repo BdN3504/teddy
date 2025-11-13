@@ -33,6 +33,10 @@
     <None Include="..\TonieAudio.Tests\TestData\track1.mp3" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\TonieAudio.Tests\TestData\track2.mp3" CopyToOutputDirectory="PreserveNewest" />
     <None Include="..\TonieAudio.Tests\TestData\track3.mp3" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Copy real MP3 files for realistic testing -->
+    <None Include="..\TonieAudio.Tests\TestData\gold.mp3" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\TonieAudio.Tests\TestData\gold_flume_remix.mp3" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\TonieAudio.Tests\TestData\titus_wacht_auf.mp3" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

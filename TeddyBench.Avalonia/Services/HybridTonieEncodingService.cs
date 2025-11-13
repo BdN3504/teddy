@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using TonieFile;
@@ -41,21 +42,38 @@ public class HybridTonieEncodingService
         string originalTonieFilePath,
         int bitRate = 96)
     {
+        var totalSw = Stopwatch.StartNew();
+        Console.WriteLine($"[ENCODING TIMING] Starting hybrid encoding with {tracks.Count} tracks");
+
         // Check if we have any original tracks
         var hasOriginalTracks = tracks.Any(t => t.IsOriginal);
+        var originalCount = tracks.Count(t => t.IsOriginal);
+        var newCount = tracks.Count - originalCount;
+        Console.WriteLine($"[ENCODING TIMING] {originalCount} original tracks (copied), {newCount} new tracks (encoded)");
 
         // If all tracks are new, just use regular encoding
         if (!hasOriginalTracks)
         {
+            Console.WriteLine("[ENCODING TIMING] All tracks are new, using regular encoding");
+            var sw = Stopwatch.StartNew();
             var audioPaths = tracks.Select(t => t.AudioFilePath!).ToArray();
             TonieAudio generatedAudio = new TonieAudio(audioPaths, audioId, bitRate * 1000, false, null);
+            Console.WriteLine($"[ENCODING TIMING] Regular encoding took {sw.ElapsedMilliseconds}ms");
             string resultHash = BitConverter.ToString(generatedAudio.Header.Hash).Replace("-", "");
+            Console.WriteLine($"[ENCODING TIMING] Total encoding time: {totalSw.ElapsedMilliseconds}ms");
             return (generatedAudio.FileContent, resultHash);
         }
 
         // Extract raw chapter data from original tonie
+        var sw1 = Stopwatch.StartNew();
+        Console.WriteLine("[ENCODING TIMING] Reading original tonie file...");
         var originalAudio = TonieAudio.FromFile(originalTonieFilePath);
+        Console.WriteLine($"[ENCODING TIMING] Read original tonie: {sw1.ElapsedMilliseconds}ms");
+
+        sw1.Restart();
+        Console.WriteLine("[ENCODING TIMING] Extracting raw chapter data...");
         var rawChapters = originalAudio.ExtractRawChapterData();
+        Console.WriteLine($"[ENCODING TIMING] Extract chapters: {sw1.ElapsedMilliseconds}ms");
 
         // Build array of TrackSource objects for TonieAudio
         var trackSources = new List<TonieAudio.TrackSource>();
@@ -78,8 +96,13 @@ public class HybridTonieEncodingService
 
         // Use the new TonieAudio constructor that supports mixed sources
         // Pass the original audio data so headers can be extracted correctly
+        sw1.Restart();
+        Console.WriteLine("[ENCODING TIMING] Creating hybrid tonie with mixed sources...");
         TonieAudio hybridAudio = new TonieAudio(trackSources.ToArray(), originalAudio.Audio, audioId, bitRate * 1000, false, null);
+        Console.WriteLine($"[ENCODING TIMING] Create hybrid tonie: {sw1.ElapsedMilliseconds}ms");
+
         string hybridHash = BitConverter.ToString(hybridAudio.Header.Hash).Replace("-", "");
+        Console.WriteLine($"[ENCODING TIMING] Total encoding time: {totalSw.ElapsedMilliseconds}ms");
         return (hybridAudio.FileContent, hybridHash);
     }
 }
