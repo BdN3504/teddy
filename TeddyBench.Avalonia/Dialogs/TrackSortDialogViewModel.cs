@@ -37,8 +37,8 @@ public partial class TrackSortDialogViewModel : ObservableObject
     {
         _parentWindow = parentWindow;
 
-        // Sort by filename initially
-        var sortedPaths = audioPaths.OrderBy(p => Path.GetFileName(p)).ToArray();
+        // Sort by folder grouping - files from the same folder stay together
+        var sortedPaths = SortByFolderThenFilename(audioPaths);
         for (int i = 0; i < sortedPaths.Length; i++)
         {
             Tracks.Add(new AudioTrackItem
@@ -183,8 +183,11 @@ public partial class TrackSortDialogViewModel : ObservableObject
                     })
                     .ToArray();
 
-                // Add new files to the end of the list
-                foreach (var path in newAudioPaths)
+                // Sort new files by folder grouping before adding
+                var sortedNewPaths = SortByFolderThenFilename(newAudioPaths);
+
+                // Add sorted files to the end of the list
+                foreach (var path in sortedNewPaths)
                 {
                     Tracks.Add(new AudioTrackItem
                     {
@@ -254,5 +257,27 @@ public partial class TrackSortDialogViewModel : ObservableObject
     public string[] GetSortedFilePaths()
     {
         return Tracks.Select(t => t.FilePath).ToArray();
+    }
+
+    /// <summary>
+    /// Sorts files by folder first (maintaining folder order), then alphabetically by filename within each folder.
+    /// This ensures files from the same folder stay grouped together.
+    /// </summary>
+    private string[] SortByFolderThenFilename(string[] paths)
+    {
+        // Group files by their parent directory
+        var groupedByFolder = paths
+            .GroupBy(p => Path.GetDirectoryName(p) ?? "")
+            .Select((group, index) => new
+            {
+                FolderPath = group.Key,
+                OriginalOrder = index, // Preserve the order folders appear in the input
+                Files = group.OrderBy(p => Path.GetFileName(p)).ToList() // Sort files within folder
+            })
+            .OrderBy(g => g.OriginalOrder) // Maintain folder order
+            .SelectMany(g => g.Files) // Flatten back to a single list
+            .ToArray();
+
+        return groupedByFolder;
     }
 }
