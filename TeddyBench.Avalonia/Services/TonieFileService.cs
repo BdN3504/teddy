@@ -42,11 +42,12 @@ public class TonieFileService
     /// <param name="audioPaths">Audio file paths in the desired order</param>
     /// <param name="audioId">Audio ID (from RFID)</param>
     /// <param name="bitRate">Bitrate in kbps (default 96)</param>
+    /// <param name="callback">Optional callback for progress reporting</param>
     /// <returns>The encoded Tonie file content and hash</returns>
-    public (byte[] FileContent, string Hash) EncodeCustomTonie(string[] audioPaths, uint audioId, int bitRate = 96)
+    public (byte[] FileContent, string Hash) EncodeCustomTonie(string[] audioPaths, uint audioId, int bitRate = 96, TonieAudio.EncodeCallback? callback = null)
     {
         bool useVbr = false;
-        TonieAudio generated = new TonieAudio(audioPaths, audioId, bitRate * 1000, useVbr, null);
+        TonieAudio generated = new TonieAudio(audioPaths, audioId, bitRate * 1000, useVbr, null, callback);
 
         // Get the hash for customTonies.json
         string hash = BitConverter.ToString(generated.Header.Hash).Replace("-", "");

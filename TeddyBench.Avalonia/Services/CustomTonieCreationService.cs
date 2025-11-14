@@ -65,16 +65,18 @@ public class CustomTonieCreationService
     /// <param name="audioId">The parsed audio ID</param>
     /// <param name="sortedAudioPaths">Sorted audio file paths</param>
     /// <param name="originalUid">The original UID for metadata (user-entered format)</param>
+    /// <param name="callback">Optional callback for progress reporting</param>
     /// <returns>The generated hash and target file path</returns>
     public (string Hash, string FilePath) CreateCustomTonieFile(
         string targetDirectory,
         string reversedUid,
         uint audioId,
         string[] sortedAudioPaths,
-        string originalUid)
+        string originalUid,
+        TonieFile.TonieAudio.EncodeCallback? callback = null)
     {
         // Encode the audio files
-        var (fileContent, hash) = _tonieFileService.EncodeCustomTonie(sortedAudioPaths, audioId, 96);
+        var (fileContent, hash) = _tonieFileService.EncodeCustomTonie(sortedAudioPaths, audioId, 96, callback);
 
         // Create directory structure
         // Directory: reversedUid (e.g., "0451ED0E"), File: "500304E0" (constant suffix)

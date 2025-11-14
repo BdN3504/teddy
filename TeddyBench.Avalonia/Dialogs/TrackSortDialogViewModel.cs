@@ -153,10 +153,16 @@ public partial class TrackSortDialogViewModel : ObservableObject
         try
         {
             var storageProvider = _parentWindow.StorageProvider;
+
+            // Try to start in the Music directory
+            var musicPath = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
+            var suggestedLocation = await storageProvider.TryGetFolderFromPathAsync(musicPath);
+
             var filePickerOptions = new FilePickerOpenOptions
             {
                 Title = "Add Audio Files",
                 AllowMultiple = true,
+                SuggestedStartLocation = suggestedLocation,
                 FileTypeFilter = new[]
                 {
                     new FilePickerFileType("Audio Files") { Patterns = new[] { "*.mp3", "*.ogg", "*.flac", "*.wav", "*.m4a", "*.aac", "*.wma" } },

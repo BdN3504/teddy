@@ -392,24 +392,40 @@ public partial class MainWindowViewModel : ViewModelBase
             // Determine the folder name from source files
             string sourceFolderName = _tonieFileService.GetSourceFolderName(sortedAudioPaths);
 
+            // Show progress dialog
+            var progressDialog = new ProgressDialog();
+            var progressViewModel = new ProgressDialogViewModel(progressDialog, sortedAudioPaths.Length);
+            progressDialog.DataContext = progressViewModel;
+
+            // Create encode callback that reports to progress dialog
+            var encodeCallback = new Services.AvaloniaEncodeCallback(progressViewModel);
+
             StatusText = $"Encoding {sortedAudioPaths.Length} file(s)...";
             IsScanning = true;
 
             string generatedHash = string.Empty;
             string targetFile = string.Empty;
 
-            await Task.Run(() =>
+            // Start encoding in background task
+            var encodingTask = Task.Run(() =>
             {
-                // Create custom Tonie file using the service
+                // Create custom Tonie file using the service with progress callback
                 (generatedHash, targetFile) = _customTonieService.CreateCustomTonieFile(
                     CurrentDirectory,
                     reversedUid,
                     audioId,
                     sortedAudioPaths,
-                    uidInput);
+                    uidInput,
+                    encodeCallback);
+
+                // Notify completion
+                progressViewModel.Complete();
 
                 StatusText = $"Successfully created custom Tonie: {reversedUid}/500304E0";
             });
+
+            // Show the progress dialog (non-blocking, but waits for encoding to finish)
+            await progressDialog.ShowDialog(_window);
 
             // Register custom tonie in metadata
             if (!string.IsNullOrEmpty(generatedHash))

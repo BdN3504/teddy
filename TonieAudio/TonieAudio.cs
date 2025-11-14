@@ -350,6 +350,12 @@ namespace TonieFile
                 Console.WriteLine("");
                 Console.WriteLine("Warning: " + message);
             }
+
+            public virtual void PostProcessing(string message)
+            {
+                Console.WriteLine("");
+                Console.WriteLine(message);
+            }
         }
 
         public TonieAudio()
@@ -660,8 +666,10 @@ namespace TonieFile
                 SetEosOnLastPage(outputData);
             }
 
+            cbr.PostProcessing("Finalizing audio stream...");
             Audio = File.ReadAllBytes(tempName);
 
+            cbr.PostProcessing("Computing file hash...");
             using var prov = SHA1.Create();
             Header.Hash = prov.ComputeHash(Audio);
             Header.AudioChapters = chapters.ToArray();
@@ -1339,8 +1347,10 @@ namespace TonieFile
                 Header.AudioId = (uint) oggOut.LogicalStreamId;
             }
 
+            cbr.PostProcessing("Finalizing audio stream...");
             Audio = File.ReadAllBytes(tempName);
 
+            cbr.PostProcessing("Computing file hash...");
             using var prov = SHA1.Create();
             Header.Hash = prov.ComputeHash(Audio);
             Header.AudioChapters = chapters.ToArray();
