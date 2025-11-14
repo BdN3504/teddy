@@ -34,6 +34,7 @@ public class EndToEndWorkflowTests : IDisposable
     private readonly string _existingTonieFile;
     private readonly string _customTonieJsonPath;
     private readonly string _toniesJsonPath;
+    private readonly string _appSettingsPath;
 
     public EndToEndWorkflowTests()
     {
@@ -47,9 +48,29 @@ public class EndToEndWorkflowTests : IDisposable
         _existingTonieFile = Path.Combine(_existingTonieDir, "500304E0");
         _customTonieJsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "customTonies.json");
         _toniesJsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "tonies.json");
+        _appSettingsPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "appsettings.json");
+
+        // Ensure appsettings.json exists with AudioIdPrompt = false for tests
+        EnsureAppSettings();
 
         // Create a test tonie file for deletion test
         CreateTestTonieFile(_existingTonieFile);
+    }
+
+    private void EnsureAppSettings()
+    {
+        // Create default appsettings.json if it doesn't exist
+        // This ensures tests run with AudioIdPrompt = false (auto-generate mode)
+        if (!File.Exists(_appSettingsPath))
+        {
+            var defaultSettings = new JObject
+            {
+                ["RfidPrefix"] = "0EED",
+                ["SortOption"] = "DisplayName",
+                ["AudioIdPrompt"] = false
+            };
+            File.WriteAllText(_appSettingsPath, defaultSettings.ToString());
+        }
     }
 
     private void CreateTestTonieFile(string path)

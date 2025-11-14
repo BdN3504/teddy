@@ -107,4 +107,39 @@ public class ConfigurationService
 
         return "0EED"; // Default value (ED0E reversed)
     }
+
+    /// <summary>
+    /// Loads the AudioIdPrompt setting from configuration.
+    /// </summary>
+    /// <returns>True if user should be prompted for Audio ID, false to auto-generate (default).</returns>
+    public bool LoadAudioIdPrompt()
+    {
+        try
+        {
+            if (File.Exists(_configPath))
+            {
+                var configJson = File.ReadAllText(_configPath);
+                var config = JsonConvert.DeserializeObject<Dictionary<string, object>>(configJson);
+
+                if (config != null && config.ContainsKey("AudioIdPrompt"))
+                {
+                    if (config["AudioIdPrompt"] is bool boolValue)
+                    {
+                        return boolValue;
+                    }
+                    // Handle string "true"/"false" values
+                    if (bool.TryParse(config["AudioIdPrompt"]?.ToString(), out bool parsedValue))
+                    {
+                        return parsedValue;
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: Could not load AudioIdPrompt from config, using default 'false': {ex.Message}");
+        }
+
+        return false; // Default value (auto-generate Audio ID)
+    }
 }

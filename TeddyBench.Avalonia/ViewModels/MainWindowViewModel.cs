@@ -193,6 +193,28 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            // Check if we should prompt for Audio ID
+            bool shouldPromptForAudioId = _configService.LoadAudioIdPrompt();
+            uint? customAudioId = null;
+
+            if (shouldPromptForAudioId)
+            {
+                // Show Audio ID prompt dialog
+                var audioIdDialog = new HexInputDialog();
+                var audioIdResult = await audioIdDialog.ShowDialog<bool?>(_window);
+
+                if (audioIdResult == true)
+                {
+                    customAudioId = audioIdDialog.GetValue();
+                    if (customAudioId == null)
+                    {
+                        StatusText = "Error: Invalid Audio ID";
+                        return;
+                    }
+                }
+                // If cancelled, customAudioId remains null and will be auto-generated
+            }
+
             // Load RFID prefix from config file (4 characters in reverse byte order)
             string rfidPrefix = _configService.LoadRfidPrefix();
 
@@ -226,7 +248,7 @@ public partial class MainWindowViewModel : ViewModelBase
             }
 
             string reversedUid = parseResult.Value.ReversedUid;
-            uint audioId = parseResult.Value.AudioId;
+            uint audioId = customAudioId ?? parseResult.Value.AudioId; // Use custom Audio ID if provided, otherwise use generated one
 
             // Select audio files
             var storageProvider = _window.StorageProvider;
