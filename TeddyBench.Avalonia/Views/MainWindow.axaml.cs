@@ -21,6 +21,18 @@ public partial class MainWindow : Window
 
         // Hook into window closing event to save configuration
         Closing += MainWindow_Closing;
+
+        // Hook into window opened event to auto-open directory picker
+        Opened += MainWindow_Opened;
+    }
+
+    private async void MainWindow_Opened(object? sender, EventArgs e)
+    {
+        // Auto-open directory picker on startup
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            await viewModel.AutoOpenDirectoryOnStartup();
+        }
     }
 
     private void MainWindow_Closing(object? sender, CancelEventArgs e)

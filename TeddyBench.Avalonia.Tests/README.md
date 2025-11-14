@@ -7,8 +7,8 @@ This project contains comprehensive end-to-end integration tests for the TeddyBe
 The test suite verifies the complete user workflow:
 
 1. **Start Application** - Initializes the app and waits for metadata (tonies.json) to load
-2. **Open Directory** - Navigates to `/media/david/3238-3133/CONTENT` directory (Toniebox SD card)
-3. **Select Tonie** - Finds tonie at `/media/david/3238-3133/CONTENT/A13DED0E/500304E0`, calculates SHA1 hash, and matches it against customTonies.json
+2. **Open Directory** - Navigates to `/media/username/3238-3133/CONTENT` directory (Toniebox SD card)
+3. **Select Tonie** - Finds tonie at `/media/username/3238-3133/CONTENT/A13DED0E/500304E0`, calculates SHA1 hash, and matches it against customTonies.json
 4. **Delete Tonie** - Removes the selected tonie from the SD card and updates customTonies.json
 5. **Add Custom Tonie** - Creates new custom tonie with track1.mp3 and track2.mp3
 6. **Open Player (Initial)** - Opens the audio player for the newly created tonie

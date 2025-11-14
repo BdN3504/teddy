@@ -14,6 +14,7 @@ using TeddyBench.Avalonia.Services;
 using TeddyBench.Avalonia.Models;
 using TeddyBench.Avalonia.Dialogs;
 using TeddyBench.Avalonia.Utilities;
+using System.Diagnostics;
 
 namespace TeddyBench.Avalonia.ViewModels;
 
@@ -77,6 +78,89 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = $"Error initializing metadata: {ex.Message}";
+        }
+    }
+
+    /// <summary>
+    /// Automatically opens the directory picker on startup and attempts to navigate to an SD card if found.
+    /// </summary>
+    public async Task AutoOpenDirectoryOnStartup()
+    {
+        try
+        {
+            // Wait a brief moment for the window to fully initialize
+            await Task.Delay(100);
+
+            // Get the storage provider from the window
+            var storageProvider = _window.StorageProvider;
+
+            // Try to detect an SD card automatically and use it as suggested location
+            IStorageFolder? suggestedStartLocation = null;
+            string? sdCardPath = SdCardDetector.FindFirstSdCard();
+
+            if (!string.IsNullOrEmpty(sdCardPath))
+            {
+                // Found an SD card! Use it as the suggested start location
+                StatusText = $"Auto-detected SD card at {sdCardPath}. Opening directory picker...";
+                suggestedStartLocation = await storageProvider.TryGetFolderFromPathAsync(sdCardPath);
+            }
+            else
+            {
+                // No SD card found, try removable storage paths
+                StatusText = "Opening directory picker...";
+
+                var removableStoragePaths = SdCardDetector.GetAllRemovableStoragePaths();
+
+                if (removableStoragePaths.Count > 0)
+                {
+                    // Try to use first removable storage as suggested location
+                    suggestedStartLocation = await storageProvider.TryGetFolderFromPathAsync(removableStoragePaths[0]);
+                }
+            }
+
+            if (suggestedStartLocation == null)
+            {
+                // Fall back to user's home directory
+                var homePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                suggestedStartLocation = await storageProvider.TryGetFolderFromPathAsync(homePath);
+            }
+
+            await Task.Delay(200); // Brief delay to show the message
+
+            // Configure folder picker options
+            var options = new FolderPickerOpenOptions
+            {
+                Title = "Select Tonie Files Directory",
+                AllowMultiple = false,
+                SuggestedStartLocation = suggestedStartLocation
+            };
+
+            // Show the folder picker dialog (user must click Open to confirm)
+            var result = await storageProvider.OpenFolderPickerAsync(options);
+
+            if (result.Count > 0)
+            {
+                // Get the selected folder path
+                var selectedFolder = result[0];
+                var folderPath = selectedFolder.TryGetLocalPath();
+
+                if (!string.IsNullOrEmpty(folderPath))
+                {
+                    await ScanDirectory(folderPath);
+                }
+                else
+                {
+                    StatusText = "Could not access the selected folder. Ready.";
+                }
+            }
+            else
+            {
+                StatusText = "No folder selected. Ready.";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Startup error: {ex.Message}";
         }
     }
 
@@ -252,10 +336,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
             // Select audio files
             var storageProvider = _window.StorageProvider;
+
+            // Try to start in the Music directory
+            var musicPath = Environment.GetFolderPath(Environment.SpecialFolder.MyMusic);
+            var suggestedLocation = await storageProvider.TryGetFolderFromPathAsync(musicPath);
+
             var filePickerOptions = new FilePickerOpenOptions
             {
                 Title = "Select Audio Files",
                 AllowMultiple = true,
+                SuggestedStartLocation = suggestedLocation,
                 FileTypeFilter = new[]
                 {
                     new FilePickerFileType("Audio Files") { Patterns = new[] { "*.mp3", "*.ogg", "*.flac", "*.wav", "*.m4a", "*.aac", "*.wma" } },
@@ -333,7 +423,6 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = $"Error creating custom Tonie: {ex.Message}";
-            Console.WriteLine($"Error: {ex}");
         }
         finally
         {
@@ -510,7 +599,6 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error toggling LIVE flag: {ex.Message}");
             StatusText = $"Error toggling LIVE flag: {ex.Message}";
         }
     }
@@ -639,9 +727,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 var audio = TonieAudio.FromFile(file.FilePath, false);
                 hash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"Warning: Could not read hash from file before deleting: {ex.Message}");
+                // Ignore - hash will be null
             }
 
             // Delete the file and directory
@@ -659,9 +747,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 {
                     directory.Delete(true); // true = recursive delete
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Console.WriteLine($"Warning: Could not delete directory {directory.FullName}: {ex.Message}");
+                    // Ignore directory deletion errors
                 }
             }
 
@@ -682,7 +770,6 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = $"Error deleting file: {ex.Message}";
-            Console.WriteLine($"Error: {ex}");
         }
     }
 
@@ -714,7 +801,6 @@ public partial class MainWindowViewModel : ViewModelBase
             catch (Exception ex)
             {
                 StatusText = $"Error reading file: {ex.Message}";
-                Console.WriteLine($"Error reading file: {ex}");
                 return;
             }
 
@@ -767,7 +853,6 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = $"Error renaming tonie: {ex.Message}";
-            Console.WriteLine($"Error: {ex}");
         }
 
         await Task.CompletedTask;
@@ -820,10 +905,9 @@ public partial class MainWindowViewModel : ViewModelBase
                         errorCount++;
                     }
                 }
-                catch (Exception ex)
+                catch
                 {
                     errorCount++;
-                    Console.WriteLine($"Error removing LIVE flag from {tonieFile.FileName}: {ex.Message}");
                 }
             }
 
@@ -940,9 +1024,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error downloading image for {hash}: {ex.Message}");
+            // Ignore image download errors
         }
     }
 
@@ -974,7 +1058,6 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = $"Error opening player: {ex.Message}";
-            Console.WriteLine($"Error: {ex}");
         }
     }
 
@@ -1149,9 +1232,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 {
                     Directory.Delete(tempDir, true);
                 }
-                catch (Exception ex)
+                catch
                 {
-                    Console.WriteLine($"Warning: Could not delete temp directory: {ex.Message}");
+                    // Ignore temp directory cleanup errors
                 }
 
                 // Refresh the directory to show the updated tonie
@@ -1163,7 +1246,6 @@ public partial class MainWindowViewModel : ViewModelBase
             catch (Exception ex)
             {
                 StatusText = $"Error modifying tonie: {ex.Message}";
-                Console.WriteLine($"Error: {ex}");
 
                 // Clean up temp directory on error
                 try
@@ -1173,9 +1255,9 @@ public partial class MainWindowViewModel : ViewModelBase
                         Directory.Delete(tempDir, true);
                     }
                 }
-                catch (Exception cleanupEx)
+                catch
                 {
-                    Console.WriteLine($"Warning: Could not delete temp directory: {cleanupEx.Message}");
+                    // Ignore temp directory cleanup errors
                 }
             }
             finally
@@ -1186,7 +1268,6 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = $"Error: {ex.Message}";
-            Console.WriteLine($"Error: {ex}");
         }
     }
 }

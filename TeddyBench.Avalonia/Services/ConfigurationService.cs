@@ -41,9 +41,9 @@ public class ConfigurationService
                 }
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Warning: Could not load sort option from config: {ex.Message}");
+            // Ignore errors
         }
 
         // Default to DisplayName if not found or error
@@ -76,9 +76,9 @@ public class ConfigurationService
             var updatedJson = JsonConvert.SerializeObject(config, Formatting.Indented);
             File.WriteAllText(_configPath, updatedJson);
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Warning: Could not save sort option to config: {ex.Message}");
+            // Ignore errors
         }
     }
 
@@ -100,9 +100,9 @@ public class ConfigurationService
                 }
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Warning: Could not load RFID prefix from config, using default '0EED': {ex.Message}");
+            // Ignore errors, use default
         }
 
         return "0EED"; // Default value (ED0E reversed)
@@ -135,9 +135,9 @@ public class ConfigurationService
                 }
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Warning: Could not load AudioIdPrompt from config, using default 'false': {ex.Message}");
+            // Ignore errors, use default
         }
 
         return false; // Default value (auto-generate Audio ID)

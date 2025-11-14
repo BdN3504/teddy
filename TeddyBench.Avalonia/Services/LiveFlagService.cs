@@ -44,9 +44,9 @@ public class LiveFlagService
                 return fileInfo.Attributes.HasFlag(FileAttributes.Hidden);
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error checking hidden attribute: {ex.Message}");
+            // Ignore errors
         }
 
         return false;
@@ -78,13 +78,6 @@ public class LiveFlagService
                 if (result != null)
                 {
                     result.WaitForExit();
-                    string error = result.StandardError.ReadToEnd();
-
-                    if (result.ExitCode != 0 && !string.IsNullOrEmpty(error))
-                    {
-                        Console.WriteLine($"fatattr error: {error}");
-                    }
-
                     return result.ExitCode == 0;
                 }
             }
@@ -108,7 +101,6 @@ public class LiveFlagService
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error setting hidden attribute: {ex.Message}");
             throw new InvalidOperationException($"Error: {ex.Message}. Make sure 'fatattr' is installed (sudo apt install fatattr)", ex);
         }
 

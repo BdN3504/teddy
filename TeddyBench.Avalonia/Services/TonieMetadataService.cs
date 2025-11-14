@@ -47,7 +47,6 @@ namespace TeddyBench.Avalonia.Services
                 {
                     var json = File.ReadAllText(toniesPath);
                     _toniesDb = JsonConvert.DeserializeObject<List<TonieMetadata>>(json) ?? new();
-                    Console.WriteLine($"Loaded {_toniesDb.Count} Tonies from database");
                 }
 
                 // Load customTonies.json
@@ -56,12 +55,11 @@ namespace TeddyBench.Avalonia.Services
                 {
                     var json = File.ReadAllText(customPath);
                     _customTonies = JsonConvert.DeserializeObject<Dictionary<string, string>>(json) ?? new();
-                    Console.WriteLine($"Loaded {_customTonies.Count} custom Tonies");
                 }
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"Error loading metadata: {ex.Message}");
+                // Ignore metadata loading errors
             }
         }
 
@@ -133,7 +131,6 @@ namespace TeddyBench.Avalonia.Services
             {
                 _customTonies[hash] = title;
                 _customToniesModified = true;
-                Console.WriteLine($"Added custom Tonie: {hash} = {title}");
 
                 // Save immediately
                 SaveCustomTonies();
@@ -148,7 +145,6 @@ namespace TeddyBench.Avalonia.Services
             {
                 _customTonies[hash] = newTitle;
                 _customToniesModified = true;
-                Console.WriteLine($"Updated custom Tonie: {hash} = {newTitle}");
 
                 // Save immediately
                 SaveCustomTonies();
@@ -163,7 +159,6 @@ namespace TeddyBench.Avalonia.Services
             {
                 _customTonies.Remove(hash);
                 _customToniesModified = true;
-                Console.WriteLine($"Removed custom Tonie: {hash}");
 
                 // Save immediately
                 SaveCustomTonies();
@@ -186,13 +181,11 @@ namespace TeddyBench.Avalonia.Services
                 string existingTitle = _customTonies[oldHash];
                 _customTonies.Remove(oldHash);
                 _customTonies[newHash] = existingTitle;
-                Console.WriteLine($"Updated custom Tonie hash: {oldHash} -> {newHash} (title: {existingTitle})");
             }
             else
             {
                 // Old hash not in customTonies (it was an official tonie), add new entry
                 _customTonies[newHash] = title;
-                Console.WriteLine($"Added modified official Tonie as custom: {newHash} = {title}");
             }
 
             _customToniesModified = true;
@@ -210,12 +203,11 @@ namespace TeddyBench.Avalonia.Services
             {
                 var json = JsonConvert.SerializeObject(_customTonies, Formatting.Indented);
                 File.WriteAllText(_customToniesPath, json);
-                Console.WriteLine($"Saved {_customTonies.Count} custom Tonies to {_customToniesPath}");
                 _customToniesModified = false;
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"Error saving customTonies.json: {ex.Message}");
+                // Ignore save errors
             }
         }
 
@@ -270,7 +262,6 @@ namespace TeddyBench.Avalonia.Services
         {
             try
             {
-                Console.WriteLine($"Downloading tonies.json from {TonieJsonUrl}...");
                 var jsonContent = await _httpClient.GetStringAsync(TonieJsonUrl);
 
                 var toniesPath = Path.Combine(_basePath, "tonies.json");
@@ -278,13 +269,11 @@ namespace TeddyBench.Avalonia.Services
 
                 // Reload metadata after download
                 _toniesDb = JsonConvert.DeserializeObject<List<TonieMetadata>>(jsonContent) ?? new();
-                Console.WriteLine($"Downloaded and loaded {_toniesDb.Count} Tonies from database");
 
                 return true;
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"Error downloading tonies.json: {ex.Message}");
                 return false;
             }
         }
@@ -307,15 +296,12 @@ namespace TeddyBench.Avalonia.Services
 
             try
             {
-                Console.WriteLine($"Downloading image for {hash}...");
                 var imageBytes = await _httpClient.GetByteArrayAsync(picUrl);
                 await File.WriteAllBytesAsync(cacheFileName, imageBytes);
-                Console.WriteLine($"Cached image to {cacheFileName}");
                 return cacheFileName;
             }
-            catch (Exception ex)
+            catch
             {
-                Console.WriteLine($"Error downloading image for {hash}: {ex.Message}");
                 return null;
             }
         }

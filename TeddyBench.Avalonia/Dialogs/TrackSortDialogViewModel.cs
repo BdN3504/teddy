@@ -204,9 +204,9 @@ public partial class TrackSortDialogViewModel : ObservableObject
                 }
             }
         }
-        catch (Exception ex)
+        catch
         {
-            Console.WriteLine($"Error adding files: {ex.Message}");
+            // Ignore errors
         }
     }
 
@@ -219,7 +219,6 @@ public partial class TrackSortDialogViewModel : ObservableObject
         // Prevent removing all tracks - need at least one
         if (SelectedTracks.Count >= Tracks.Count)
         {
-            Console.WriteLine("Cannot remove all tracks - at least one track is required");
             return;
         }
 
