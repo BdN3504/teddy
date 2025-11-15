@@ -62,4 +62,15 @@ public partial class MainWindow : Window
             viewModel.SelectedFile = item;
         }
     }
+
+    private async void Button_DoubleTapped(object? sender, RoutedEventArgs e)
+    {
+        if (sender is Button button &&
+            button.Tag is TonieFileItem item &&
+            DataContext is MainWindowViewModel viewModel)
+        {
+            // Open the player on double-click
+            await viewModel.PlayTonieCommand.ExecuteAsync(item);
+        }
+    }
 }
