@@ -165,6 +165,18 @@ namespace TeddyBench.Avalonia.Services
             }
         }
 
+        public string? GetCustomTonieName(string hash)
+        {
+            hash = hash.ToUpperInvariant();
+
+            if (_customTonies.ContainsKey(hash))
+            {
+                return _customTonies[hash];
+            }
+
+            return null;
+        }
+
         /// <summary>
         /// Updates a custom Tonie's hash key (used when modifying a tonie, which changes its hash).
         /// If oldHash is in customTonies, removes it and adds newHash with the same title.

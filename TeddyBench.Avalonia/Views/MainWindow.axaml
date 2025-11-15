@@ -132,6 +132,9 @@
                                                       Command="{Binding $parent[Window].DataContext.RenameSelectedTonieCommand}"
                                                       CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"
                                                       IsVisible="{Binding $parent[Window].DataContext.SelectedFile.IsCustomTonie}"/>
+                                            <MenuItem Header="Assign new UID"
+                                                      Command="{Binding $parent[Window].DataContext.AssignNewUidCommand}"
+                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
                                             <MenuItem Header="Toggle LIVE Flag"
                                                       Command="{Binding $parent[Window].DataContext.ToggleLiveFlagCommand}"
                                                       CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>

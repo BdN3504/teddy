@@ -1078,6 +1078,153 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task AssignNewUid(TonieFileItem? file)
+    {
+        if (file == null)
+        {
+            StatusText = "Please select a file first";
+            return;
+        }
+
+        if (string.IsNullOrEmpty(CurrentDirectory))
+        {
+            StatusText = "Error: No directory is currently open";
+            return;
+        }
+
+        try
+        {
+            // Get the current UID from the file path
+            var fileInfo = new FileInfo(file.FilePath);
+            var directory = fileInfo.Directory;
+            if (directory == null)
+            {
+                StatusText = "Error: Could not determine current UID";
+                return;
+            }
+
+            // The directory name is the reversed UID (first 8 chars)
+            string currentReversedUid = directory.Name;
+
+            // Reverse it back to get the display UID
+            string currentDisplayUid = _tonieFileService.ReverseUidBytes(currentReversedUid);
+
+            // Load RFID prefix from config file (4 characters in reverse byte order)
+            string rfidPrefix = _configService.LoadRfidPrefix();
+
+            // Show RFID input dialog with current UID pre-filled
+            var rfidDialog = new RfidInputDialog(currentDisplayUid, CurrentDirectory);
+            var rfidResult = await rfidDialog.ShowDialog<bool?>(_window);
+
+            if (rfidResult != true)
+            {
+                StatusText = "Operation cancelled";
+                return;
+            }
+
+            // Parse new RFID UID
+            string newUidInput = rfidDialog.GetRfidUid()?.Replace(" ", "").Replace(":", "").ToUpper() ?? "";
+
+            // Check if the UID has changed
+            if (newUidInput == currentDisplayUid)
+            {
+                StatusText = "UID unchanged";
+                return;
+            }
+
+            // Validate new RFID UID
+            var (isValid, errorMessage) = _customTonieService.ValidateRfidUid(newUidInput);
+            if (!isValid)
+            {
+                StatusText = $"Error: {errorMessage}";
+                return;
+            }
+
+            // Reverse the new UID for directory naming
+            string newReversedUid = _tonieFileService.ReverseUidBytes(newUidInput);
+
+            // Build new paths
+            string newDirPath = Path.Combine(CurrentDirectory, newReversedUid);
+            string newFilePath = Path.Combine(newDirPath, "500304E0");
+
+            // Check if new location already exists
+            if (File.Exists(newFilePath))
+            {
+                StatusText = $"Error: A tonie with UID '{newUidInput}' already exists";
+                return;
+            }
+
+            StatusText = $"Moving tonie from {currentDisplayUid} to {newUidInput}...";
+
+            // Read the hash before moving (for updating customTonies.json if needed)
+            string? hash = null;
+            bool isCustomTonie = file.IsCustomTonie;
+            try
+            {
+                var audio = TonieAudio.FromFile(file.FilePath, false);
+                hash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
+            }
+            catch
+            {
+                // Ignore - hash will be null
+            }
+
+            // Create new directory
+            Directory.CreateDirectory(newDirPath);
+
+            // Move the file
+            File.Move(file.FilePath, newFilePath);
+
+            // Try to delete old directory if it's empty
+            try
+            {
+                if (directory.GetFiles().Length == 0 && directory.GetDirectories().Length == 0)
+                {
+                    directory.Delete();
+                }
+            }
+            catch
+            {
+                // Ignore errors deleting old directory
+            }
+
+            // Update RFID in customTonies.json if this is a custom tonie
+            if (isCustomTonie && !string.IsNullOrEmpty(hash))
+            {
+                // Get the current custom tonie name from customTonies.json
+                string? currentCustomName = _metadataService.GetCustomTonieName(hash);
+
+                if (!string.IsNullOrEmpty(currentCustomName))
+                {
+                    // Extract the title part (without RFID)
+                    string titlePart = currentCustomName;
+                    var rfidMatch = Regex.Match(currentCustomName, @"^(.*?)\s*\[RFID:\s*[0-9A-F]{8}\]$", RegexOptions.IgnoreCase);
+                    if (rfidMatch.Success)
+                    {
+                        titlePart = rfidMatch.Groups[1].Value.Trim();
+                    }
+
+                    // Create new name with updated RFID
+                    string newCustomName = $"{titlePart} [RFID: {newUidInput}]";
+                    _metadataService.UpdateCustomTonie(hash, newCustomName);
+                }
+            }
+
+            StatusText = $"Successfully reassigned UID from {currentDisplayUid} to {newUidInput}";
+
+            // Refresh the directory to show the updated tonie
+            if (!string.IsNullOrEmpty(CurrentDirectory))
+            {
+                await ScanDirectory(CurrentDirectory);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error reassigning UID: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
     private async Task ModifyContents(TonieFileItem? file)
     {
         if (file == null)
