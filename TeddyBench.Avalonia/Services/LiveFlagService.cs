@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Threading.Tasks;
 
 namespace TeddyBench.Avalonia.Services;
 
@@ -42,6 +43,54 @@ public class LiveFlagService
                 // On Windows, use FileInfo.Attributes
                 var fileInfo = new FileInfo(filePath);
                 return fileInfo.Attributes.HasFlag(FileAttributes.Hidden);
+            }
+        }
+        catch
+        {
+            // Ignore errors
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Checks if a file has the Hidden attribute (LIVE flag) set asynchronously.
+    /// </summary>
+    public async Task<bool> GetHiddenAttributeAsync(string filePath)
+    {
+        try
+        {
+            if (OperatingSystem.IsLinux())
+            {
+                // On Linux, use fatattr to check DOS hidden attribute
+                var process = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "fatattr",
+                        Arguments = $"\"{filePath}\"",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+                };
+
+                process.Start();
+                string output = await process.StandardOutput.ReadToEndAsync();
+                await process.WaitForExitAsync();
+
+                // fatattr output format: "h" for hidden, "-" for not hidden
+                return output.Contains("h");
+            }
+            else
+            {
+                // On Windows, use FileInfo.Attributes (runs on thread pool)
+                return await Task.Run(() =>
+                {
+                    var fileInfo = new FileInfo(filePath);
+                    return fileInfo.Attributes.HasFlag(FileAttributes.Hidden);
+                });
             }
         }
         catch

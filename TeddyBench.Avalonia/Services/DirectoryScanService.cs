@@ -110,6 +110,10 @@ public class DirectoryScanService
         bool isKnownTonie = false;
         bool isCustomTonie = false;
 
+        // Report progress: Reading file header
+        ProgressUpdate?.Invoke(this, $"Reading {directoryName}/{file.Name}... ({filesProcessed}/{totalDirs})");
+        await Task.Delay(1); // Brief delay to ensure UI updates
+
         try
         {
             var audio = TonieAudio.FromFile(file.FullName, false);
@@ -145,9 +149,11 @@ public class DirectoryScanService
         // Official tonies from the database never have the LIVE flag
         if (!isKnownTonie)
         {
-            ProgressUpdate?.Invoke(this, $"Checking LIVE flag for {file.Name}... ({filesProcessed}/{totalDirs})");
+            // Show more detailed progress for LIVE flag check
+            var displayFileName = title != $"{directoryName}/{file.Name}" ? title : file.Name;
+            ProgressUpdate?.Invoke(this, $"Checking attributes: {displayFileName}... ({filesProcessed}/{totalDirs})");
             await Task.Delay(1); // Brief delay to ensure UI updates
-            isLive = _liveFlagService.GetHiddenAttribute(file.FullName);
+            isLive = await _liveFlagService.GetHiddenAttributeAsync(file.FullName);
         }
 
         // Add [LIVE] prefix if file has Hidden attribute

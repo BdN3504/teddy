@@ -902,7 +902,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 try
                 {
                     // This file is marked as LIVE, so remove the flag
-                    StatusText = $"Removing LIVE flag from {tonieFile.FileName}... ({filesProcessed}/{totalFiles})";
+                    // Show friendly name without [LIVE] prefix for clarity
+                    var displayName = tonieFile.DisplayName.Replace("[LIVE] ", "");
+                    StatusText = $"Removing LIVE flag: {displayName}... ({filesProcessed}/{totalFiles})";
                     await Task.Delay(1);
 
                     bool success = _liveFlagService.SetHiddenAttribute(tonieFile.FilePath, false);
