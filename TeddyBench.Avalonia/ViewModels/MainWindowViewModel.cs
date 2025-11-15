@@ -183,13 +183,17 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _selectedFileDetails = string.Empty;
 
     [ObservableProperty]
+    private System.Collections.IList? _selectedItems;
+
+    [ObservableProperty]
     private ObservableCollection<SortOptionItem> _sortOptions = new();
 
     [ObservableProperty]
     private SortOptionItem? _currentSortOption;
 
-    public bool HasSelectedFile => SelectedFile != null;
+    public bool HasSelectedFile => SelectedFile != null && (SelectedItems?.Count ?? 0) <= 1;
     public bool HasValidDirectory => !string.IsNullOrEmpty(CurrentDirectory);
+    public bool HasMultipleSelection => (SelectedItems?.Count ?? 0) > 1;
 
     partial void OnSelectedFileChanged(TonieFileItem? value)
     {
@@ -577,6 +581,12 @@ public partial class MainWindowViewModel : ViewModelBase
         // Select the clicked item
         item.IsSelected = true;
         SelectedFile = item;
+    }
+
+    public void UpdateSelectionState()
+    {
+        OnPropertyChanged(nameof(HasSelectedFile));
+        OnPropertyChanged(nameof(HasMultipleSelection));
     }
 
     [RelayCommand]
@@ -1224,6 +1234,179 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             StatusText = $"Error reassigning UID: {ex.Message}";
         }
+    }
+
+    [RelayCommand]
+    private async Task DeleteMultipleTonie()
+    {
+        if (SelectedItems == null || SelectedItems.Count == 0)
+        {
+            StatusText = "No items selected";
+            return;
+        }
+
+        try
+        {
+            // Create a list of items to delete (copy to avoid modification during enumeration)
+            var itemsToDelete = SelectedItems.Cast<TonieFileItem>().ToList();
+            int count = itemsToDelete.Count;
+
+            // Show confirmation dialog
+            var confirmDialog = new ConfirmDeleteDialog($"{count} tonies");
+            var result = await confirmDialog.ShowDialog<bool?>(_window);
+
+            if (result != true)
+            {
+                StatusText = "Delete cancelled";
+                return;
+            }
+
+            StatusText = $"Deleting {count} tonies...";
+            IsScanning = true;
+
+            int successCount = 0;
+            int errorCount = 0;
+
+            foreach (var file in itemsToDelete)
+            {
+                try
+                {
+                    // Read the hash before deleting (if possible)
+                    string? hash = null;
+                    try
+                    {
+                        var audio = TonieAudio.FromFile(file.FilePath, false);
+                        hash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
+                    }
+                    catch
+                    {
+                        // Ignore - hash will be null
+                    }
+
+                    // Delete the file and directory
+                    var fileInfo = new FileInfo(file.FilePath);
+                    var directory = fileInfo.Directory;
+
+                    fileInfo.Delete();
+
+                    if (directory != null && directory.Exists)
+                    {
+                        // Delete the directory if it's empty or force delete
+                        try
+                        {
+                            directory.Delete(true); // true = recursive delete
+                        }
+                        catch
+                        {
+                            // Ignore directory deletion errors
+                        }
+                    }
+
+                    // Remove from customTonies.json if we got the hash
+                    if (!string.IsNullOrEmpty(hash))
+                    {
+                        _metadataService.RemoveCustomTonie(hash);
+                    }
+
+                    successCount++;
+                }
+                catch (Exception ex)
+                {
+                    StatusText = $"Error deleting {file.DisplayName}: {ex.Message}";
+                    errorCount++;
+                }
+            }
+
+            StatusText = $"Successfully deleted {successCount} tonie(s)" + (errorCount > 0 ? $", {errorCount} error(s)" : "");
+
+            // Refresh the directory to update the view
+            if (!string.IsNullOrEmpty(CurrentDirectory))
+            {
+                await ScanDirectory(CurrentDirectory);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error during bulk delete: {ex.Message}";
+        }
+        finally
+        {
+            IsScanning = false;
+        }
+    }
+
+    [RelayCommand]
+    private async Task RemoveMultipleLiveFlags()
+    {
+        if (SelectedItems == null || SelectedItems.Count == 0)
+        {
+            StatusText = "No items selected";
+            return;
+        }
+
+        IsScanning = true;
+        int removedCount = 0;
+        int errorCount = 0;
+        var itemsToProcess = SelectedItems.Cast<TonieFileItem>().ToList();
+        int totalFiles = itemsToProcess.Count;
+
+        try
+        {
+            StatusText = $"Removing LIVE flags from {totalFiles} selected tonie(s)...";
+            await Task.Delay(100);
+
+            foreach (var tonieFile in itemsToProcess)
+            {
+                try
+                {
+                    // Check if the file has LIVE flag
+                    bool hasLiveFlag = _liveFlagService.GetHiddenAttribute(tonieFile.FilePath);
+
+                    if (hasLiveFlag)
+                    {
+                        // Remove the flag
+                        bool success = _liveFlagService.SetHiddenAttribute(tonieFile.FilePath, false);
+                        if (success)
+                        {
+                            tonieFile.IsLive = false;
+
+                            // Update DisplayName to remove [LIVE] prefix
+                            var titleWithoutLive = tonieFile.DisplayName.Replace("[LIVE] ", "");
+                            tonieFile.DisplayName = titleWithoutLive;
+
+                            removedCount++;
+                        }
+                        else
+                        {
+                            errorCount++;
+                        }
+                    }
+                }
+                catch
+                {
+                    errorCount++;
+                }
+            }
+
+            if (errorCount > 0)
+            {
+                StatusText = $"Removed LIVE flag from {removedCount} tonie(s), {errorCount} error(s)";
+            }
+            else if (removedCount > 0)
+            {
+                StatusText = $"Successfully removed LIVE flag from {removedCount} tonie(s)";
+            }
+            else
+            {
+                StatusText = "No LIVE flags found in selected tonies";
+            }
+        }
+        finally
+        {
+            IsScanning = false;
+        }
+
+        await Task.CompletedTask;
     }
 
     [RelayCommand]

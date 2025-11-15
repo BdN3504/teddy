@@ -1,8 +1,12 @@
 using System;
+using System.Linq;
+using System.Collections;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
+using Avalonia.Media;
+using Avalonia.Styling;
 using TeddyBench.Avalonia.ViewModels;
 using TeddyBench.Avalonia.Models;
 using System.ComponentModel;
@@ -44,33 +48,106 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Button_ContextRequested(object? sender, RoutedEventArgs e)
+    private void Border_ContextRequested(object? sender, ContextRequestedEventArgs e)
     {
-        if (sender is Button button &&
-            button.Tag is TonieFileItem item &&
+        if (sender is Border border &&
+            border.DataContext is TonieFileItem item &&
             DataContext is MainWindowViewModel viewModel)
         {
-            // Select the item before context menu opens
-            // Deselect all items first
-            foreach (var tonieFile in viewModel.TonieFiles)
-            {
-                tonieFile.IsSelected = false;
-            }
+            // Get the ListBox
+            var listBox = this.FindControl<ListBox>("TonieListBox");
+            if (listBox == null) return;
 
-            // Select the right-clicked item
-            item.IsSelected = true;
-            viewModel.SelectedFile = item;
+            // Check how many items are currently selected
+            int selectionCount = listBox.SelectedItems?.Count ?? 0;
+
+            if (selectionCount <= 1)
+            {
+                // Single selection or no selection - use single-item context menu
+                // The border already has the single-selection context menu attached
+                // Just ensure the item is selected
+                listBox.SelectedItem = item;
+            }
+            else
+            {
+                // Multiple items selected
+                // Check if the right-clicked item is part of the selection
+                bool isItemInSelection = listBox.SelectedItems?.Contains(item) ?? false;
+
+                if (!isItemInSelection)
+                {
+                    // If right-clicked item is not in selection, select only this item
+                    listBox.SelectedItem = item;
+                }
+                else
+                {
+                    // Right-clicked on a selected item - show multi-selection context menu
+                    e.Handled = true;
+
+                    // Capture the currently selected items before showing the menu
+                    var selectedItemsCopy = listBox.SelectedItems?.Cast<TonieFileItem>().ToList();
+                    if (selectedItemsCopy == null || selectedItemsCopy.Count == 0)
+                    {
+                        return;
+                    }
+
+                    var multiContextMenu = new ContextMenu
+                    {
+                        Background = Brushes.White
+                    };
+
+                    // Add style for black text
+                    var style = new Style(x => x.OfType<MenuItem>());
+                    style.Setters.Add(new Setter(MenuItem.ForegroundProperty, Brushes.Black));
+                    multiContextMenu.Styles.Add(style);
+
+                    var deleteMenuItem = new MenuItem
+                    {
+                        Header = $"Delete Selected ({selectionCount} items)"
+                    };
+                    deleteMenuItem.Click += async (s, args) =>
+                    {
+                        // Use the captured selection
+                        viewModel.SelectedItems = new System.Collections.ArrayList(selectedItemsCopy);
+                        await viewModel.DeleteMultipleTonieCommand.ExecuteAsync(null);
+                    };
+
+                    var removeLiveFlagMenuItem = new MenuItem
+                    {
+                        Header = $"Remove LIVE Flag ({selectionCount} items)"
+                    };
+                    removeLiveFlagMenuItem.Click += async (s, args) =>
+                    {
+                        // Use the captured selection
+                        viewModel.SelectedItems = new System.Collections.ArrayList(selectedItemsCopy);
+                        await viewModel.RemoveMultipleLiveFlagsCommand.ExecuteAsync(null);
+                    };
+
+                    multiContextMenu.Items.Add(removeLiveFlagMenuItem);
+                    multiContextMenu.Items.Add(deleteMenuItem);
+
+                    multiContextMenu.Open(border);
+                }
+            }
         }
     }
 
-    private async void Button_DoubleTapped(object? sender, RoutedEventArgs e)
+    private async void Border_DoubleTapped(object? sender, RoutedEventArgs e)
     {
-        if (sender is Button button &&
-            button.Tag is TonieFileItem item &&
+        if (sender is Border border &&
+            border.DataContext is TonieFileItem item &&
             DataContext is MainWindowViewModel viewModel)
         {
             // Open the player on double-click
             await viewModel.PlayTonieCommand.ExecuteAsync(item);
+        }
+    }
+
+    private void TonieListBox_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.UpdateSelectionState();
         }
     }
 }

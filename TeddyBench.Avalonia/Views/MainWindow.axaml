@@ -86,75 +86,95 @@
 
             <Border Grid.Row="1" BorderBrush="#CCCCCC" BorderThickness="1">
                 <ScrollViewer>
-                    <ItemsControl ItemsSource="{Binding TonieFiles}">
-                        <ItemsControl.ItemsPanel>
+                    <ListBox ItemsSource="{Binding TonieFiles}"
+                             SelectedItem="{Binding SelectedFile}"
+                             SelectedItems="{Binding SelectedItems}"
+                             SelectionMode="Multiple"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             Name="TonieListBox"
+                             SelectionChanged="TonieListBox_SelectionChanged">
+                        <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <WrapPanel Orientation="Horizontal"/>
                             </ItemsPanelTemplate>
-                        </ItemsControl.ItemsPanel>
-                        <ItemsControl.ItemTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.Styles>
+                            <Style Selector="ListBoxItem">
+                                <Setter Property="Padding" Value="0"/>
+                                <Setter Property="Margin" Value="0"/>
+                            </Style>
+                            <Style Selector="ListBoxItem:selected /template/ ContentPresenter">
+                                <Setter Property="Background" Value="Transparent"/>
+                            </Style>
+                            <Style Selector="ListBoxItem:pointerover /template/ ContentPresenter">
+                                <Setter Property="Background" Value="Transparent"/>
+                            </Style>
+                        </ListBox.Styles>
+                        <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <Button Command="{Binding $parent[ItemsControl].((vm:MainWindowViewModel)DataContext).SelectTonieCommand}"
-                                        CommandParameter="{Binding}"
-                                        Tag="{Binding}"
-                                        Classes.selected="{Binding IsSelected}"
-                                        BorderThickness="2"
+                                <Border BorderThickness="2"
                                         Padding="5"
                                         Margin="5"
-                                        Name="TonieButton"
-                                        ContextRequested="Button_ContextRequested"
-                                        DoubleTapped="Button_DoubleTapped">
-                                    <Button.Styles>
-                                        <Style Selector="Button">
+                                        ContextRequested="Border_ContextRequested"
+                                        DoubleTapped="Border_DoubleTapped">
+                                    <Border.Styles>
+                                        <Style Selector="Border">
                                             <Setter Property="Background" Value="Transparent"/>
                                             <Setter Property="BorderBrush" Value="Transparent"/>
                                         </Style>
-                                        <Style Selector="Button.selected /template/ ContentPresenter">
+                                        <Style Selector="ListBoxItem:selected Border">
                                             <Setter Property="Background" Value="#F0F0F0"/>
                                         </Style>
-                                        <Style Selector="Button.selected TextBlock">
+                                        <Style Selector="ListBoxItem:selected TextBlock">
                                             <Setter Property="Foreground" Value="#000000"/>
                                         </Style>
-                                        <Style Selector="Button:pointerover /template/ ContentPresenter">
+                                        <Style Selector="ListBoxItem:pointerover Border">
                                             <Setter Property="Background" Value="#F0F0F0"/>
                                         </Style>
-                                        <Style Selector="Button:pointerover TextBlock">
+                                        <Style Selector="ListBoxItem:pointerover TextBlock">
                                             <Setter Property="Foreground" Value="#000000"/>
                                         </Style>
-                                    </Button.Styles>
-                                    <Button.ContextMenu>
-                                        <ContextMenu>
+                                    </Border.Styles>
+                                    <!-- Single selection context menu -->
+                                    <Border.ContextMenu>
+                                        <ContextMenu Name="SingleSelectionContextMenu" Background="White">
+                                            <ContextMenu.Styles>
+                                                <Style Selector="MenuItem">
+                                                    <Setter Property="Foreground" Value="Black"/>
+                                                </Style>
+                                            </ContextMenu.Styles>
                                             <MenuItem Header="Open player"
                                                       Command="{Binding $parent[Window].DataContext.PlayTonieCommand}"
-                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                                      CommandParameter="{Binding}"/>
                                             <Separator/>
                                             <MenuItem Header="Rename"
                                                       Command="{Binding $parent[Window].DataContext.RenameSelectedTonieCommand}"
-                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"
-                                                      IsVisible="{Binding $parent[Window].DataContext.SelectedFile.IsCustomTonie}"/>
+                                                      CommandParameter="{Binding}"
+                                                      IsVisible="{Binding IsCustomTonie}"/>
                                             <MenuItem Header="Assign new UID"
                                                       Command="{Binding $parent[Window].DataContext.AssignNewUidCommand}"
-                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                                      CommandParameter="{Binding}"/>
                                             <MenuItem Header="Toggle LIVE Flag"
                                                       Command="{Binding $parent[Window].DataContext.ToggleLiveFlagCommand}"
-                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                                      CommandParameter="{Binding}"/>
                                             <Separator/>
                                             <MenuItem Header="Decode"
                                                       Command="{Binding $parent[Window].DataContext.DecodeTonieCommand}"
-                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                                      CommandParameter="{Binding}"/>
                                             <MenuItem Header="Show Info"
                                                       Command="{Binding $parent[Window].DataContext.ShowTonieInfoCommand}"
-                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                                      CommandParameter="{Binding}"/>
                                             <Separator/>
                                             <MenuItem Header="Modify Contents"
                                                       Command="{Binding $parent[Window].DataContext.ModifyContentsCommand}"
-                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                                      CommandParameter="{Binding}"/>
                                             <Separator/>
                                             <MenuItem Header="Delete"
                                                       Command="{Binding $parent[Window].DataContext.DeleteSelectedTonieCommand}"
-                                                      CommandParameter="{Binding $parent[Window].DataContext.SelectedFile}"/>
+                                                      CommandParameter="{Binding}"/>
                                         </ContextMenu>
-                                    </Button.ContextMenu>
+                                    </Border.ContextMenu>
                                     <StackPanel Width="120" Spacing="5">
                                         <Border Width="100" Height="100" BorderBrush="#CCCCCC" BorderThickness="1"
                                                 CornerRadius="5" Background="White">
@@ -168,10 +188,10 @@
                                                    FontSize="11"
                                                    MaxHeight="40"/>
                                     </StackPanel>
-                                </Button>
+                                </Border>
                             </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                 </ScrollViewer>
             </Border>
 
