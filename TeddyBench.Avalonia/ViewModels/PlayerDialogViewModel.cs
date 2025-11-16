@@ -38,6 +38,8 @@ public partial class PlayerDialogViewModel : ViewModelBase
                 OnPropertyChanged(nameof(IsStopped));
                 OnPropertyChanged(nameof(CanStop));
                 OnPropertyChanged(nameof(PlayPauseButtonText));
+                OnPropertyChanged(nameof(PlayPauseIcon));
+                OnPropertyChanged(nameof(PlayPauseTooltip));
 
                 // If we have a pending seek and playback just started, apply it now
                 if (state == PlaybackState.Playing && _pendingSeekPosition.HasValue)
@@ -53,8 +55,13 @@ public partial class PlayerDialogViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() =>
             {
                 CurrentPosition = position;
+                _isUpdatingPosition = true;
                 PositionSeconds = position.TotalSeconds;
+                _isUpdatingPosition = false;
                 OnPropertyChanged(nameof(CurrentPositionText));
+
+                // Update current track based on position
+                UpdateCurrentTrack(position);
             });
         };
 
@@ -64,7 +71,30 @@ public partial class PlayerDialogViewModel : ViewModelBase
             {
                 // Reset to beginning
                 CurrentPosition = TimeSpan.Zero;
+                _isUpdatingPosition = true;
                 PositionSeconds = 0;
+                _isUpdatingPosition = false;
+
+                // Clear current track highlight
+                if (CurrentTrack != null)
+                {
+                    CurrentTrack.IsCurrentTrack = false;
+                    CurrentTrack = null;
+                }
+                CurrentTrackText = "Not playing";
+
+                // Update button states
+                OnPropertyChanged(nameof(CanGoPrevious));
+                OnPropertyChanged(nameof(CanGoNext));
+            });
+        };
+
+        _audioPlayer.DurationChanged += (s, duration) =>
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                DurationSeconds = duration.TotalSeconds;
+                OnPropertyChanged(nameof(DurationText));
             });
         };
 
@@ -81,8 +111,31 @@ public partial class PlayerDialogViewModel : ViewModelBase
     [ObservableProperty]
     private TimeSpan _currentPosition = TimeSpan.Zero;
 
-    [ObservableProperty]
     private double _positionSeconds;
+    private bool _isUpdatingPosition = false;
+
+    public double PositionSeconds
+    {
+        get => _positionSeconds;
+        set
+        {
+            if (Math.Abs(_positionSeconds - value) < 0.001)
+                return;
+
+            // Check if this is a user-initiated change (not from position update)
+            if (!_isUpdatingPosition && CanStop)
+            {
+                // User is dragging the slider - seek to new position
+                SetProperty(ref _positionSeconds, value);
+                SeekTo(value);
+            }
+            else
+            {
+                // Normal position update from playback
+                SetProperty(ref _positionSeconds, value);
+            }
+        }
+    }
 
     [ObservableProperty]
     private double _durationSeconds;
@@ -90,13 +143,23 @@ public partial class PlayerDialogViewModel : ViewModelBase
     [ObservableProperty]
     private ObservableCollection<TrackInfo> _tracks = new();
 
+    [ObservableProperty]
+    private TrackInfo? _currentTrack;
+
+    [ObservableProperty]
+    private string _currentTrackText = "Not playing";
+
     public bool IsPlaying => PlaybackState == PlaybackState.Playing;
     public bool IsPaused => PlaybackState == PlaybackState.Paused;
     public bool IsStopped => PlaybackState == PlaybackState.Stopped;
     public bool CanStop => IsPlaying || IsPaused;
     public string PlayPauseButtonText => IsPlaying ? "Pause" : "Play";
+    public string PlayPauseIcon => IsPlaying ? "⏸" : "▶";
+    public string PlayPauseTooltip => IsPlaying ? "Pause" : "Play";
     public string CurrentPositionText => FormatTime(CurrentPosition);
     public string DurationText => FormatTime(_audioPlayer?.Duration ?? TimeSpan.Zero);
+    public bool CanGoPrevious => CurrentTrack != null && Tracks.Count > 0 && CurrentTrack.TrackNumber > 1;
+    public bool CanGoNext => CurrentTrack != null && Tracks.Count > 0 && CurrentTrack.TrackNumber < Tracks.Count;
 
     private void LoadTracks()
     {
@@ -217,11 +280,7 @@ public partial class PlayerDialogViewModel : ViewModelBase
             {
                 // Start playback
                 _audioPlayer.Play(_tonieFilePath);
-
-                // Update duration
-                var duration = _audioPlayer.Duration;
-                DurationSeconds = duration.TotalSeconds;
-                OnPropertyChanged(nameof(DurationText));
+                // Duration will be set automatically via DurationChanged event
             }
         }
         catch (Exception)
@@ -236,8 +295,25 @@ public partial class PlayerDialogViewModel : ViewModelBase
         try
         {
             _audioPlayer.Stop();
+
+            // Reset position to 00:00
             CurrentPosition = TimeSpan.Zero;
+            _isUpdatingPosition = true;
             PositionSeconds = 0;
+            _isUpdatingPosition = false;
+            OnPropertyChanged(nameof(CurrentPositionText));
+
+            // Clear current track highlight
+            if (CurrentTrack != null)
+            {
+                CurrentTrack.IsCurrentTrack = false;
+                CurrentTrack = null;
+            }
+            CurrentTrackText = "Not playing";
+
+            // Update button states
+            OnPropertyChanged(nameof(CanGoPrevious));
+            OnPropertyChanged(nameof(CanGoNext));
         }
         catch (Exception)
         {
@@ -268,11 +344,7 @@ public partial class PlayerDialogViewModel : ViewModelBase
             {
                 _pendingSeekPosition = position;
                 _audioPlayer.Play(_tonieFilePath);
-
-                // Update duration
-                var duration = _audioPlayer.Duration;
-                DurationSeconds = duration.TotalSeconds;
-                OnPropertyChanged(nameof(DurationText));
+                // Duration will be set automatically via DurationChanged event
             }
             else
             {
@@ -283,6 +355,50 @@ public partial class PlayerDialogViewModel : ViewModelBase
         catch (Exception)
         {
             // Seek to track error
+        }
+    }
+
+    [RelayCommand]
+    private void PreviousTrack()
+    {
+        try
+        {
+            if (CurrentTrack == null || Tracks.Count == 0)
+                return;
+
+            // Find previous track
+            var currentIndex = Tracks.IndexOf(CurrentTrack);
+            if (currentIndex > 0)
+            {
+                var previousTrack = Tracks[currentIndex - 1];
+                SeekToTrack(previousTrack.Position);
+            }
+        }
+        catch (Exception)
+        {
+            // Previous track error
+        }
+    }
+
+    [RelayCommand]
+    private void NextTrack()
+    {
+        try
+        {
+            if (CurrentTrack == null || Tracks.Count == 0)
+                return;
+
+            // Find next track
+            var currentIndex = Tracks.IndexOf(CurrentTrack);
+            if (currentIndex < Tracks.Count - 1)
+            {
+                var nextTrack = Tracks[currentIndex + 1];
+                SeekToTrack(nextTrack.Position);
+            }
+        }
+        catch (Exception)
+        {
+            // Next track error
         }
     }
 
@@ -300,6 +416,61 @@ public partial class PlayerDialogViewModel : ViewModelBase
         _audioPlayer.Dispose();
     }
 
+    private void UpdateCurrentTrack(TimeSpan position)
+    {
+        if (Tracks.Count == 0)
+        {
+            CurrentTrack = null;
+            CurrentTrackText = "Not playing";
+            return;
+        }
+
+        // Find which track we're currently in based on position
+        TrackInfo? newCurrentTrack = null;
+
+        for (int i = Tracks.Count - 1; i >= 0; i--)
+        {
+            if (position >= Tracks[i].Position)
+            {
+                newCurrentTrack = Tracks[i];
+                break;
+            }
+        }
+
+        // If position is before the first track, default to first track
+        if (newCurrentTrack == null && Tracks.Count > 0)
+        {
+            newCurrentTrack = Tracks[0];
+        }
+
+        // Update if changed
+        if (CurrentTrack != newCurrentTrack)
+        {
+            // Clear previous track highlight
+            if (CurrentTrack != null)
+            {
+                CurrentTrack.IsCurrentTrack = false;
+            }
+
+            CurrentTrack = newCurrentTrack;
+
+            // Set new track highlight
+            if (CurrentTrack != null)
+            {
+                CurrentTrack.IsCurrentTrack = true;
+                CurrentTrackText = $"Currently playing: Track {CurrentTrack.TrackNumber}";
+            }
+            else
+            {
+                CurrentTrackText = "Not playing";
+            }
+
+            // Update button states
+            OnPropertyChanged(nameof(CanGoPrevious));
+            OnPropertyChanged(nameof(CanGoNext));
+        }
+    }
+
     private static string FormatTime(TimeSpan time)
     {
         if (time.TotalHours >= 1)
@@ -313,9 +484,12 @@ public partial class PlayerDialogViewModel : ViewModelBase
     }
 }
 
-public class TrackInfo
+public partial class TrackInfo : ObservableObject
 {
     public int TrackNumber { get; set; }
     public TimeSpan Position { get; set; }
     public string DisplayText { get; set; } = string.Empty;
+
+    [ObservableProperty]
+    private bool _isCurrentTrack;
 }

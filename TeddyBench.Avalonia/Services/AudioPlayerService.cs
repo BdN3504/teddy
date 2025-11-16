@@ -39,6 +39,11 @@ public class AudioPlayerService : IDisposable
     public event EventHandler<string>? PlaybackError;
 
     /// <summary>
+    /// Raised when the duration of the media becomes available
+    /// </summary>
+    public event EventHandler<TimeSpan>? DurationChanged;
+
+    /// <summary>
     /// Current playback state
     /// </summary>
     public PlaybackState State { get; private set; } = PlaybackState.Stopped;
@@ -138,6 +143,13 @@ public class AudioPlayerService : IDisposable
                 OnPlaybackError("VLC encountered an error during playback");
             };
 
+            _mediaPlayer.LengthChanged += (s, e) =>
+            {
+                // Duration is now available
+                var duration = TimeSpan.FromMilliseconds(e.Length);
+                OnDurationChanged(duration);
+            };
+
             // Start playback
             _mediaPlayer.Play();
         }
@@ -217,7 +229,7 @@ public class AudioPlayerService : IDisposable
         _positionTimer = new Timer(_ =>
         {
             OnPositionChanged(CurrentPosition);
-        }, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(100));
+        }, null, TimeSpan.Zero, TimeSpan.FromMilliseconds(10));
     }
 
     private void StopPositionTimer()
@@ -248,6 +260,11 @@ public class AudioPlayerService : IDisposable
     private void OnPlaybackError(string message)
     {
         PlaybackError?.Invoke(this, message);
+    }
+
+    private void OnDurationChanged(TimeSpan duration)
+    {
+        DurationChanged?.Invoke(this, duration);
     }
 
     public void Dispose()
