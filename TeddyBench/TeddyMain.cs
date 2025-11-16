@@ -1,4 +1,4 @@
-﻿using NAudio.Wave;
+using NAudio.Wave;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -148,10 +148,10 @@ namespace TeddyBench
                     try
                     {
                         TonieInfoString = "| Downloading...";
-                        HttpWebRequest request = (HttpWebRequest)WebRequest.Create("https://api.revvox.de/tonies.json?source=TeddyBench&version=" + ThisAssembly.Git.BaseTag);
-                        HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-                        TextReader reader = new StreamReader(response.GetResponseStream());
-                        jsonContent = reader.ReadToEnd();
+                        using (var httpClient = new HttpClient())
+                        {
+                            jsonContent = httpClient.GetStringAsync("https://api.revvox.de/tonies.json?source=TeddyBench&version=" + ThisAssembly.Git.BaseTag).Result;
+                        }
                         TonieInfoString = "| Downloaded";
                     }
                     catch (Exception e)
@@ -1059,18 +1059,22 @@ namespace TeddyBench
 
             try
             {
-                HttpWebRequest request = (HttpWebRequest)WebRequest.Create(pic);
-                HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-                Image img = ResizeImage(Image.FromStream(response.GetResponseStream()), 128, 128);
+                using (var httpClient = new HttpClient())
+                {
+                    using (var stream = httpClient.GetStreamAsync(pic).Result)
+                    {
+                        Image img = ResizeImage(Image.FromStream(stream), 128, 128);
 
-                try
-                {
-                    img.Save(cacheFileName);
+                        try
+                        {
+                            img.Save(cacheFileName);
+                        }
+                        catch (Exception ex)
+                        {
+                        }
+                        return img;
+                    }
                 }
-                catch (Exception ex)
-                {
-                }
-                return img;
             }
             catch (Exception ex)
             {
