@@ -35,7 +35,6 @@ namespace TeddyBench
         private bool AnalyzeThreadStop = false;
         private SafeThread EncodeThread = null;
         private SafeThread LogThread;
-        private bool LogThreadStop;
         private SafeThread UpdateCheckThread = null;
 
         private string CurrentDirectory = null;
@@ -541,7 +540,7 @@ namespace TeddyBench
 
                     if (latestVersion != thisVersion)
                     {
-                        string destPath = new FileInfo(Assembly.GetExecutingAssembly().Location).DirectoryName;
+                        string destPath = AppContext.BaseDirectory;
                         string zipName = Path.Combine(destPath, "TeddyBench.zip");
 
                         if (latestRelease.assets[0].name == "TeddyBench.zip")
@@ -644,7 +643,6 @@ namespace TeddyBench
             }
             if (LogThread != null)
             {
-                LogThreadStop = true;
                 LogThread.Join(100);
                 LogThread.Abort();
                 LogThread = null;
