@@ -25,11 +25,6 @@ jobs:
       id: get_version
       run: echo "VERSION=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-    - name: Restore dependencies
-      run: |
-        dotnet restore Teddy/Teddy.csproj
-        dotnet restore TeddyBench.Avalonia/TeddyBench.Avalonia.csproj
-
     - name: Build Windows x64 CLI
       run: |
         dotnet publish Teddy/Teddy.csproj \
