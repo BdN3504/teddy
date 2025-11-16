@@ -1,4 +1,4 @@
-﻿/* Copyright (c) 2020 g3gg0.de
+/* Copyright (c) 2020 g3gg0.de
 
    Redistribution and use in source and binary forms, with or without
    modification, are permitted provided that the following conditions
@@ -56,11 +56,11 @@ namespace Teddy
             {
                 if (path.StartsWith("http"))
                 {
-                    HttpWebRequest request = (HttpWebRequest)WebRequest.Create(path);
-                    HttpWebResponse response = (HttpWebResponse)request.GetResponse();
-                    TextReader reader = new StreamReader(response.GetResponseStream());
-
-                    TonieInfos = JsonConvert.DeserializeObject<TonieTools.TonieData[]>(reader.ReadToEnd());
+                    using (var httpClient = new HttpClient())
+                    {
+                        var json = httpClient.GetStringAsync(path).Result;
+                        TonieInfos = JsonConvert.DeserializeObject<TonieTools.TonieData[]>(json);
+                    }
                 }
                 else if (File.Exists(path))
                 {
