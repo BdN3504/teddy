@@ -30,7 +30,7 @@ if %ERRORLEVEL% neq 0 (
 
 echo.
 echo ==========================================
-echo BUILD SUCCESSFUL! ✓
+echo BUILD SUCCESSFUL!
 echo ==========================================
 echo.
 echo Output location:
