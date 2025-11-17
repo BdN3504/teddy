@@ -17,9 +17,9 @@
   </ItemGroup>
 
   <!-- Exclude LibVLC native libraries from single-file bundle -->
-  <Target Name="ExcludeLibVLCFromSingleFile" AfterTargets="ComputeFilesToPublish">
+  <Target Name="ExcludeLibVLCFromSingleFile" BeforeTargets="GenerateSingleFileBundle">
     <ItemGroup>
-      <ResolvedFileToPublish Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').StartsWith('libvlc'))">
+      <ResolvedFileToPublish Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').Contains('libvlc'))">
         <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
       </ResolvedFileToPublish>
     </ItemGroup>

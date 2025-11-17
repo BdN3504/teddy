@@ -76,7 +76,8 @@ jobs:
           -r win-x64 \
           --self-contained true \
           -p:PublishSingleFile=true \
-          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:DebugType=none \
+          -p:DebugSymbols=false \
           -o artifacts/teddybench-win-x64
 
     - name: Build Linux x64 GUI
@@ -86,7 +87,8 @@ jobs:
           -r linux-x64 \
           --self-contained true \
           -p:PublishSingleFile=true \
-          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:DebugType=none \
+          -p:DebugSymbols=false \
           -o artifacts/teddybench-linux-x64
 
     - name: Build macOS x64 GUI
@@ -96,7 +98,8 @@ jobs:
           -r osx-x64 \
           --self-contained true \
           -p:PublishSingleFile=true \
-          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:DebugType=none \
+          -p:DebugSymbols=false \
           -o artifacts/teddybench-osx-x64
 
     - name: Build macOS ARM64 GUI
@@ -106,7 +109,8 @@ jobs:
           -r osx-arm64 \
           --self-contained true \
           -p:PublishSingleFile=true \
-          -p:IncludeNativeLibrariesForSelfExtract=true \
+          -p:DebugType=none \
+          -p:DebugSymbols=false \
           -o artifacts/teddybench-osx-arm64
 
     - name: Create release archives
