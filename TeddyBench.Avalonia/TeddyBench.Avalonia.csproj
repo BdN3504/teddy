@@ -16,6 +16,15 @@
     </None>
   </ItemGroup>
 
+  <!-- Exclude LibVLC native libraries from single-file bundle -->
+  <Target Name="ExcludeLibVLCFromSingleFile" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Condition="$([System.String]::Copy('%(ResolvedFileToPublish.RelativePath)').StartsWith('libvlc'))">
+        <ExcludeFromSingleFile>true</ExcludeFromSingleFile>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
   <ItemGroup>
     <ProjectReference Include="..\TonieAudio\TonieAudio.csproj" />
   </ItemGroup>
