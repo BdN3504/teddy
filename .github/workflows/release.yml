@@ -75,9 +75,7 @@ jobs:
           -c Release \
           -r win-x64 \
           --self-contained true \
-          -p:PublishSingleFile=true \
-          -p:IncludeNativeLibrariesForSelfExtract=true \
-          -p:EnableCompressionInSingleFile=true \
+          -p:PublishSingleFile=false \
           -o artifacts/teddybench-win-x64
 
     - name: Build Linux x64 GUI
@@ -86,9 +84,7 @@ jobs:
           -c Release \
           -r linux-x64 \
           --self-contained true \
-          -p:PublishSingleFile=true \
-          -p:IncludeNativeLibrariesForSelfExtract=true \
-          -p:EnableCompressionInSingleFile=true \
+          -p:PublishSingleFile=false \
           -o artifacts/teddybench-linux-x64
 
     - name: Build macOS x64 GUI
@@ -97,9 +93,7 @@ jobs:
           -c Release \
           -r osx-x64 \
           --self-contained true \
-          -p:PublishSingleFile=true \
-          -p:IncludeNativeLibrariesForSelfExtract=true \
-          -p:EnableCompressionInSingleFile=true \
+          -p:PublishSingleFile=false \
           -o artifacts/teddybench-osx-x64
 
     - name: Build macOS ARM64 GUI
@@ -108,9 +102,7 @@ jobs:
           -c Release \
           -r osx-arm64 \
           --self-contained true \
-          -p:PublishSingleFile=true \
-          -p:IncludeNativeLibrariesForSelfExtract=true \
-          -p:EnableCompressionInSingleFile=true \
+          -p:PublishSingleFile=false \
           -o artifacts/teddybench-osx-arm64
 
     - name: Create release archives
@@ -123,11 +115,11 @@ jobs:
         cd teddy-osx-x64 && tar czf ../teddy-${{ steps.get_version.outputs.VERSION }}-osx-x64.tar.gz Teddy && cd ..
         cd teddy-osx-arm64 && tar czf ../teddy-${{ steps.get_version.outputs.VERSION }}-osx-arm64.tar.gz Teddy && cd ..
 
-        # GUI archives
-        cd teddybench-win-x64 && zip -q ../teddybench-${{ steps.get_version.outputs.VERSION }}-win-x64.zip TeddyBench.Avalonia.exe appsettings.json && cd ..
-        cd teddybench-linux-x64 && tar czf ../teddybench-${{ steps.get_version.outputs.VERSION }}-linux-x64.tar.gz TeddyBench.Avalonia appsettings.json && cd ..
-        cd teddybench-osx-x64 && tar czf ../teddybench-${{ steps.get_version.outputs.VERSION }}-osx-x64.tar.gz TeddyBench.Avalonia appsettings.json && cd ..
-        cd teddybench-osx-arm64 && tar czf ../teddybench-${{ steps.get_version.outputs.VERSION }}-osx-arm64.tar.gz TeddyBench.Avalonia appsettings.json && cd ..
+        # GUI archives (include all files for LibVLC native dependencies)
+        cd teddybench-win-x64 && zip -qr ../teddybench-${{ steps.get_version.outputs.VERSION }}-win-x64.zip . && cd ..
+        cd teddybench-linux-x64 && tar czf ../teddybench-${{ steps.get_version.outputs.VERSION }}-linux-x64.tar.gz . && cd ..
+        cd teddybench-osx-x64 && tar czf ../teddybench-${{ steps.get_version.outputs.VERSION }}-osx-x64.tar.gz . && cd ..
+        cd teddybench-osx-arm64 && tar czf ../teddybench-${{ steps.get_version.outputs.VERSION }}-osx-arm64.tar.gz . && cd ..
 
     - name: Generate checksums
       run: |
