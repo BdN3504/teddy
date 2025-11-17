@@ -23,17 +23,9 @@
 
     <DockPanel>
         <Menu DockPanel.Dock="Top">
-            <MenuItem Header="_File">
-                <MenuItem Header="_Open Directory..." Command="{Binding OpenDirectoryCommand}"/>
-                <Separator/>
-                <MenuItem Header="E_xit" Command="{Binding ExitCommand}"/>
-            </MenuItem>
-            <MenuItem Header="_Operations">
-                <MenuItem Header="_Add Custom Tonie..." Command="{Binding AddCustomTonieCommand}" IsEnabled="{Binding HasValidDirectory}"/>
-                <MenuItem Header="_Decode Selected" Command="{Binding DecodeSelectedCommand}"/>
-                <MenuItem Header="Show _Info" Command="{Binding ShowInfoCommand}"/>
-            </MenuItem>
             <MenuItem Header="_Help">
+                <MenuItem Header="_Keyboard Shortcuts" Command="{Binding ShowShortcutsCommand}"/>
+                <Separator/>
                 <MenuItem Header="_About" Command="{Binding AboutCommand}"/>
             </MenuItem>
         </Menu>
@@ -62,12 +54,12 @@
             </Grid.RowDefinitions>
 
             <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
-                <Button Command="{Binding OpenDirectoryCommand}" Content="Open Directory"/>
-                <Button Command="{Binding AddCustomTonieCommand}" Content="Add Custom Tonie" IsEnabled="{Binding HasValidDirectory}"/>
-                <Button Command="{Binding DecodeSelectedCommand}" Content="Decode Selected"/>
-                <Button Command="{Binding ShowInfoCommand}" Content="Show Info"/>
-                <Button Command="{Binding RefreshCommand}" Content="Refresh"/>
-                <Button Command="{Binding RemoveAllLiveFlagsCommand}" Content="Remove All LIVE Flags"/>
+                <Button Command="{Binding OpenDirectoryCommand}" Content="_Open Directory"/>
+                <Button Command="{Binding AddCustomTonieCommand}" Content="_Add Custom Tonie" IsEnabled="{Binding HasValidDirectory}"/>
+                <Button Command="{Binding DecodeSelectedCommand}" Content="_Decode Selected"/>
+                <Button Command="{Binding ShowInfoCommand}" Content="_Show Info"/>
+                <Button Command="{Binding RefreshCommand}" Content="_Refresh"/>
+                <Button Command="{Binding RemoveAllLiveFlagsCommand}" Content="Remove All _LIVE Flags"/>
 
                 <!-- Sort Dropdown -->
                 <StackPanel Orientation="Horizontal" Spacing="5" Margin="20,0,0,0">

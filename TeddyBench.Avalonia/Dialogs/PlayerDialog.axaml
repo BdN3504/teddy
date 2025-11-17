@@ -176,6 +176,7 @@
                 Command="{Binding CloseCommand}"
                 HorizontalAlignment="Right"
                 Width="100"
-                Margin="0,20,0,0"/>
+                Margin="0,20,0,0"
+                IsCancel="True"/>
     </Grid>
 </Window>

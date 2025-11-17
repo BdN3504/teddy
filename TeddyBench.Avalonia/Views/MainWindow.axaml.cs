@@ -28,6 +28,9 @@ public partial class MainWindow : Window
 
         // Hook into window opened event to auto-open directory picker
         Opened += MainWindow_Opened;
+
+        // Hook into key down event for keyboard shortcuts
+        KeyDown += MainWindow_KeyDown;
     }
 
     private async void MainWindow_Opened(object? sender, EventArgs e)
@@ -148,6 +151,58 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel viewModel)
         {
             viewModel.UpdateSelectionState();
+        }
+    }
+
+    private async void MainWindow_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (DataContext is not MainWindowViewModel viewModel)
+            return;
+
+        // Get the ListBox
+        var listBox = this.FindControl<ListBox>("TonieListBox");
+        if (listBox == null) return;
+
+        // Check if exactly one item is selected
+        int selectionCount = listBox.SelectedItems?.Count ?? 0;
+        TonieFileItem? selectedItem = listBox.SelectedItem as TonieFileItem;
+
+        // F2 key - Rename (only for custom tonies)
+        if (e.Key == Key.F2 && selectionCount == 1 && selectedItem != null)
+        {
+            if (selectedItem.IsCustomTonie)
+            {
+                await viewModel.RenameSelectedTonieCommand.ExecuteAsync(selectedItem);
+                e.Handled = true;
+            }
+        }
+        // Space key - Open player
+        else if (e.Key == Key.Space && selectionCount == 1 && selectedItem != null)
+        {
+            await viewModel.PlayTonieCommand.ExecuteAsync(selectedItem);
+            e.Handled = true;
+        }
+        // Enter key - Modify contents
+        else if (e.Key == Key.Enter && selectionCount == 1 && selectedItem != null)
+        {
+            await viewModel.ModifyContentsCommand.ExecuteAsync(selectedItem);
+            e.Handled = true;
+        }
+        // Delete key - Delete tonie
+        else if (e.Key == Key.Delete && selectionCount >= 1)
+        {
+            if (selectionCount == 1 && selectedItem != null)
+            {
+                // Single item deletion
+                await viewModel.DeleteSelectedTonieCommand.ExecuteAsync(selectedItem);
+                e.Handled = true;
+            }
+            else if (selectionCount > 1)
+            {
+                // Multiple item deletion
+                await viewModel.DeleteMultipleTonieCommand.ExecuteAsync(null);
+                e.Handled = true;
+            }
         }
     }
 }

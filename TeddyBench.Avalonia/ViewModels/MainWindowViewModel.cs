@@ -28,6 +28,11 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly DirectoryScanService _scanService;
     private readonly TonieSortService _sortService;
     private readonly CustomTonieCreationService _customTonieService;
+    private bool _isPlayerDialogOpen = false;
+    private bool _isModifyDialogOpen = false;
+    private bool _isRenameDialogOpen = false;
+    private bool _isDeleteDialogOpen = false;
+    private bool _isShortcutsDialogOpen = false;
 
     public MainWindowViewModel(Window window)
     {
@@ -570,6 +575,24 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task ShowShortcuts()
+    {
+        if (_isShortcutsDialogOpen)
+            return;
+
+        try
+        {
+            _isShortcutsDialogOpen = true;
+            var shortcutsDialog = new Dialogs.ShortcutsDialog();
+            await shortcutsDialog.ShowDialog(_window);
+        }
+        finally
+        {
+            _isShortcutsDialogOpen = false;
+        }
+    }
+
+    [RelayCommand]
     private void SelectTonie(TonieFileItem item)
     {
         // Deselect all items
@@ -734,8 +757,12 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        if (_isDeleteDialogOpen)
+            return;
+
         try
         {
+            _isDeleteDialogOpen = true;
             // Show confirmation dialog using ConfirmDeleteDialog
             var confirmDialog = new ConfirmDeleteDialog(file.DisplayName);
             var result = await confirmDialog.ShowDialog<bool?>(_window);
@@ -797,6 +824,10 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             StatusText = $"Error deleting file: {ex.Message}";
         }
+        finally
+        {
+            _isDeleteDialogOpen = false;
+        }
     }
 
     [RelayCommand]
@@ -815,8 +846,12 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        if (_isRenameDialogOpen)
+            return;
+
         try
         {
+            _isRenameDialogOpen = true;
             // Get the hash first
             string? hash = null;
             try
@@ -879,6 +914,10 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = $"Error renaming tonie: {ex.Message}";
+        }
+        finally
+        {
+            _isRenameDialogOpen = false;
         }
 
         await Task.CompletedTask;
@@ -1076,8 +1115,15 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        // Prevent opening multiple player dialogs
+        if (_isPlayerDialogOpen)
+        {
+            return;
+        }
+
         try
         {
+            _isPlayerDialogOpen = true;
             var dialog = new Dialogs.PlayerDialog();
             var viewModel = new PlayerDialogViewModel(file.FilePath, file.DisplayName, dialog);
             dialog.DataContext = viewModel;
@@ -1086,6 +1132,10 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = $"Error opening player: {ex.Message}";
+        }
+        finally
+        {
+            _isPlayerDialogOpen = false;
         }
     }
 
@@ -1245,8 +1295,12 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        if (_isDeleteDialogOpen)
+            return;
+
         try
         {
+            _isDeleteDialogOpen = true;
             // Create a list of items to delete (copy to avoid modification during enumeration)
             var itemsToDelete = SelectedItems.Cast<TonieFileItem>().ToList();
             int count = itemsToDelete.Count;
@@ -1332,6 +1386,7 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             IsScanning = false;
+            _isDeleteDialogOpen = false;
         }
     }
 
@@ -1418,8 +1473,12 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        if (_isModifyDialogOpen)
+            return;
+
         try
         {
+            _isModifyDialogOpen = true;
             // Read the original file to get its hash and audio ID
             TonieAudio originalAudio;
             try
@@ -1502,12 +1561,18 @@ public partial class MainWindowViewModel : ViewModelBase
                     return;
                 }
 
+                // Show progress dialog
+                var progressDialog = new ProgressDialog();
+                var progressViewModel = new ProgressDialogViewModel(progressDialog, sortedAudioPaths.Length);
+                progressDialog.DataContext = progressViewModel;
+
                 StatusText = $"Encoding {sortedAudioPaths.Length} track(s)...";
                 IsScanning = true;
 
                 string newHash = string.Empty;
 
-                await Task.Run(() =>
+                // Start encoding in background task
+                var encodingTask = Task.Run(() =>
                 {
                     // Build track sources - identify which are original vs new
                     var trackSources = new List<HybridTonieEncodingService.TrackSourceInfo>();
@@ -1546,8 +1611,14 @@ public partial class MainWindowViewModel : ViewModelBase
                     // Overwrite the original file
                     File.WriteAllBytes(file.FilePath, fileContent);
 
+                    // Notify completion
+                    progressViewModel.Complete();
+
                     StatusText = $"Successfully modified {file.FileName}";
                 });
+
+                // Show the progress dialog (non-blocking, but waits for encoding to finish)
+                await progressDialog.ShowDialog(_window);
 
                 // Update customTonies.json with new hash
                 // Determine the title for the metadata
@@ -1616,6 +1687,10 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = $"Error: {ex.Message}";
+        }
+        finally
+        {
+            _isModifyDialogOpen = false;
         }
     }
 }

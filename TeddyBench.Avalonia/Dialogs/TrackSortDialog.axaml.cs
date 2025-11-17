@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using System.Linq;
 
@@ -36,6 +37,18 @@ public partial class TrackSortDialog : Window
                     _viewModel.UpdateButtonStates();
                 }
             };
+        }
+
+        // Handle ESC key at the Window level to ensure it works even when ListBox has focus
+        KeyDown += TrackSortDialog_KeyDown;
+    }
+
+    private void TrackSortDialog_KeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            Close(false);
+            e.Handled = true;
         }
     }
 
