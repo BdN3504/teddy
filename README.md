@@ -18,12 +18,11 @@ Download pre-built binaries from the [Releases](https://github.com/BdN3504/teddy
 
 ### Linux/macOS Prerequisites
 ```bash
-# Ubuntu/Debian
+# Ubuntu/Debian (VLC required for audio playback in GUI)
 sudo apt install ffmpeg fatattr vlc libvlc-dev
 
-# macOS (Homebrew)
+# macOS (Homebrew - only FFmpeg needed, LibVLC is bundled)
 brew install ffmpeg
-brew install --cask vlc
 ```
 
 ## Usage
