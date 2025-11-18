@@ -17,6 +17,7 @@ namespace TeddyBench.Avalonia.Views;
 public partial class MainWindow : Window
 {
     private readonly HashSet<Key> _pressedKeys = new HashSet<Key>();
+    private bool _shouldFocusFirstItem = false;
 
     public MainWindow()
     {
@@ -49,7 +50,45 @@ public partial class MainWindow : Window
                     _pressedKeys.Clear();
                 }
             }
+            // Monitor for when scanning completes and tonies are loaded
+            else if (e.PropertyName == nameof(MainWindowViewModel.IsScanning))
+            {
+                if (!viewModel.IsScanning && viewModel.TonieFiles.Count > 0 && _shouldFocusFirstItem)
+                {
+                    _shouldFocusFirstItem = false;
+                    FocusFirstTonieItem();
+                }
+            }
+            // Set flag when directory changes to focus first item after scan
+            else if (e.PropertyName == nameof(MainWindowViewModel.CurrentDirectory))
+            {
+                _shouldFocusFirstItem = true;
+            }
         };
+    }
+
+    private async void FocusFirstTonieItem()
+    {
+        // Use dispatcher to ensure UI is fully rendered before focusing
+        await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var listBox = this.FindControl<ListBox>("TonieListBox");
+            if (listBox != null && listBox.ItemCount > 0)
+            {
+                // Select the first item
+                listBox.SelectedIndex = 0;
+
+                // Focus the ListBox to enable keyboard navigation
+                listBox.Focus();
+
+                // Also try to focus the container to ensure arrow keys work
+                var container = listBox.ContainerFromIndex(0);
+                if (container is Control control)
+                {
+                    control.Focus();
+                }
+            }
+        }, global::Avalonia.Threading.DispatcherPriority.Background);
     }
 
     private async void MainWindow_Opened(object? sender, EventArgs e)

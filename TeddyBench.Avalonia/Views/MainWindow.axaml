@@ -107,6 +107,7 @@
                              Background="Transparent"
                              BorderThickness="0"
                              Name="TonieListBox"
+                             Focusable="True"
                              SelectionChanged="TonieListBox_SelectionChanged">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
