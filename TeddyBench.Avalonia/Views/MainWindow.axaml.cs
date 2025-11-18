@@ -159,6 +159,10 @@ public partial class MainWindow : Window
         if (DataContext is not MainWindowViewModel viewModel)
             return;
 
+        // Disable main window shortcuts when any dialog is open
+        if (viewModel.IsAnyDialogOpen)
+            return;
+
         // Get the ListBox
         var listBox = this.FindControl<ListBox>("TonieListBox");
         if (listBox == null) return;

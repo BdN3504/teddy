@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 
 namespace TeddyBench.Avalonia.Dialogs;
@@ -16,6 +17,8 @@ public partial class RfidInputDialog : Window
     public RfidInputDialog(string rfidPrefix, string currentDirectory) : this()
     {
         DataContext = new RfidInputDialogViewModel(rfidPrefix, currentDirectory);
+
+        // Note: Alt+O and Alt+C are handled by button mnemonics automatically
     }
 
     private void InitializeComponent()

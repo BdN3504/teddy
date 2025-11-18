@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 
 namespace TeddyBench.Avalonia.Dialogs;
@@ -12,6 +13,8 @@ public partial class HexInputDialog : Window
     {
         InitializeComponent();
         DataContext = new HexInputDialogViewModel();
+
+        // Note: Alt+O and Alt+C are handled by button mnemonics automatically
     }
 
     private void InitializeComponent()

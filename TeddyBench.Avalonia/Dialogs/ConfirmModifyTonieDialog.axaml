@@ -36,12 +36,12 @@
     <StackPanel Orientation="Horizontal"
                 HorizontalAlignment="Center"
                 Margin="0,0,0,20">
-      <Button Content="Continue"
+      <Button Content="_Continue"
               Width="100"
               Margin="5"
               Command="{Binding YesCommand}"
               Click="OnYesClick"/>
-      <Button Content="Cancel"
+      <Button Content="Ca_ncel"
               Width="100"
               Margin="5"
               Command="{Binding NoCommand}"

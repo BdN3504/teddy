@@ -172,7 +172,8 @@
 
         <!-- Close Button -->
         <Button Grid.Row="5"
-                Content="Close"
+                Name="CloseButton"
+                Content="_Close"
                 Command="{Binding CloseCommand}"
                 HorizontalAlignment="Right"
                 Width="100"

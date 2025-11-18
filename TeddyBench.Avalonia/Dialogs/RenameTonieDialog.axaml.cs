@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 
 namespace TeddyBench.Avalonia.Dialogs;
@@ -14,6 +15,8 @@ public partial class RenameTonieDialog : Window
     public RenameTonieDialog(string currentTitle) : this()
     {
         DataContext = new RenameTonieDialogViewModel(currentTitle);
+
+        // Note: Alt+O and Alt+C are handled by button mnemonics automatically
     }
 
     private void InitializeComponent()

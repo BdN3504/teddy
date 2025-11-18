@@ -39,17 +39,30 @@ public partial class TrackSortDialog : Window
             };
         }
 
-        // Handle ESC key at the Window level to ensure it works even when ListBox has focus
-        KeyDown += TrackSortDialog_KeyDown;
+        // Handle keyboard shortcuts at the Window level
+        AddHandler(KeyDownEvent, TrackSortDialog_KeyDown, handledEventsToo: true);
+
+        // Set focus to Encode button when dialog opens so mnemonics work immediately
+        Opened += (s, e) =>
+        {
+            var encodeButton = this.FindControl<Button>("EncodeButton");
+            if (encodeButton != null)
+            {
+                encodeButton.Focus();
+            }
+        };
     }
 
     private void TrackSortDialog_KeyDown(object? sender, KeyEventArgs e)
     {
+        // ESC to close (this is the only non-mnemonic shortcut)
         if (e.Key == Key.Escape)
         {
             Close(false);
             e.Handled = true;
         }
+        // Note: All Alt+key shortcuts are handled by button mnemonics now
+        // (Alt+U, Alt+D, Alt+A, Alt+R, Alt+E, Alt+C work automatically)
     }
 
     private void InitializeComponent()

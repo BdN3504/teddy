@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 
 namespace TeddyBench.Avalonia.Dialogs;
@@ -14,6 +15,8 @@ public partial class ConfirmModifyTonieDialog : Window
     public ConfirmModifyTonieDialog(string tonieName) : this()
     {
         DataContext = new ConfirmModifyTonieDialogViewModel(tonieName);
+
+        // Note: Alt+C and Alt+N are handled by button mnemonics automatically
     }
 
     private void InitializeComponent()

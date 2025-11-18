@@ -41,7 +41,8 @@ public class HybridTonieEncodingService
         List<TrackSourceInfo> tracks,
         uint audioId,
         string originalTonieFilePath,
-        int bitRate = 96)
+        int bitRate = 96,
+        TonieFile.TonieAudio.EncodeCallback? callback = null)
     {
         // Check if we have any original tracks
         var hasOriginalTracks = tracks.Any(t => t.IsOriginal);
@@ -50,7 +51,7 @@ public class HybridTonieEncodingService
         if (!hasOriginalTracks)
         {
             var audioPaths = tracks.Select(t => t.AudioFilePath!).ToArray();
-            TonieAudio generatedAudio = new TonieAudio(audioPaths, audioId, bitRate * 1000, false, null);
+            TonieAudio generatedAudio = new TonieAudio(audioPaths, audioId, bitRate * 1000, false, null, callback);
             string resultHash = BitConverter.ToString(generatedAudio.Header.Hash).Replace("-", "");
             return (generatedAudio.FileContent, resultHash);
         }
@@ -83,7 +84,7 @@ public class HybridTonieEncodingService
 
             // Use regular encoding path - simpler and more reliable!
             // All tracks get re-encoded, but Opus at 96kbps degrades gracefully
-            TonieAudio hybridAudio = new TonieAudio(allTrackPaths.ToArray(), audioId, bitRate * 1000, false, null);
+            TonieAudio hybridAudio = new TonieAudio(allTrackPaths.ToArray(), audioId, bitRate * 1000, false, null, callback);
 
             string hybridHash = BitConverter.ToString(hybridAudio.Header.Hash).Replace("-", "");
             return (hybridAudio.FileContent, hybridHash);

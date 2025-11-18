@@ -34,6 +34,20 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _isDeleteDialogOpen = false;
     private bool _isShortcutsDialogOpen = false;
 
+    /// <summary>
+    /// Returns true if any dialog is currently open.
+    /// This is used to disable main window shortcuts when a dialog is active.
+    /// </summary>
+    public bool IsAnyDialogOpen => _isPlayerDialogOpen || _isModifyDialogOpen ||
+                                    _isRenameDialogOpen || _isDeleteDialogOpen ||
+                                    _isShortcutsDialogOpen;
+
+    /// <summary>
+    /// Returns true if no dialog is currently open.
+    /// This is used to enable/disable main window controls.
+    /// </summary>
+    public bool IsNoDialogOpen => !IsAnyDialogOpen;
+
     public MainWindowViewModel(Window window)
     {
         _window = window;
@@ -583,12 +597,16 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             _isShortcutsDialogOpen = true;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
             var shortcutsDialog = new Dialogs.ShortcutsDialog();
             await shortcutsDialog.ShowDialog(_window);
         }
         finally
         {
             _isShortcutsDialogOpen = false;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
         }
     }
 
@@ -763,6 +781,8 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             _isDeleteDialogOpen = true;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
             // Show confirmation dialog using ConfirmDeleteDialog
             var confirmDialog = new ConfirmDeleteDialog(file.DisplayName);
             var result = await confirmDialog.ShowDialog<bool?>(_window);
@@ -827,6 +847,8 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             _isDeleteDialogOpen = false;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
         }
     }
 
@@ -852,6 +874,8 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             _isRenameDialogOpen = true;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
             // Get the hash first
             string? hash = null;
             try
@@ -918,6 +942,8 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             _isRenameDialogOpen = false;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
         }
 
         await Task.CompletedTask;
@@ -1124,6 +1150,8 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             _isPlayerDialogOpen = true;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
             var dialog = new Dialogs.PlayerDialog();
             var viewModel = new PlayerDialogViewModel(file.FilePath, file.DisplayName, dialog);
             dialog.DataContext = viewModel;
@@ -1136,6 +1164,8 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             _isPlayerDialogOpen = false;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
         }
     }
 
@@ -1301,6 +1331,8 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             _isDeleteDialogOpen = true;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
             // Create a list of items to delete (copy to avoid modification during enumeration)
             var itemsToDelete = SelectedItems.Cast<TonieFileItem>().ToList();
             int count = itemsToDelete.Count;
@@ -1387,6 +1419,8 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             IsScanning = false;
             _isDeleteDialogOpen = false;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
         }
     }
 
@@ -1479,6 +1513,8 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             _isModifyDialogOpen = true;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
             // Read the original file to get its hash and audio ID
             TonieAudio originalAudio;
             try
@@ -1566,6 +1602,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 var progressViewModel = new ProgressDialogViewModel(progressDialog, sortedAudioPaths.Length);
                 progressDialog.DataContext = progressViewModel;
 
+                // Create encode callback that reports to progress dialog
+                var encodeCallback = new Services.AvaloniaEncodeCallback(progressViewModel);
+
                 StatusText = $"Encoding {sortedAudioPaths.Length} track(s)...";
                 IsScanning = true;
 
@@ -1605,7 +1644,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
                     // Use hybrid encoding to avoid re-encoding original tracks
                     var hybridEncoder = new HybridTonieEncodingService();
-                    var (fileContent, hash) = hybridEncoder.EncodeHybridTonie(trackSources, audioId, file.FilePath, 96);
+                    var (fileContent, hash) = hybridEncoder.EncodeHybridTonie(trackSources, audioId, file.FilePath, 96, encodeCallback);
                     newHash = hash;
 
                     // Overwrite the original file
@@ -1691,6 +1730,8 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             _isModifyDialogOpen = false;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
         }
     }
 }

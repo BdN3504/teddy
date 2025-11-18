@@ -22,7 +22,7 @@
     </Design.DataContext>
 
     <DockPanel>
-        <Menu DockPanel.Dock="Top">
+        <Menu DockPanel.Dock="Top" IsEnabled="{Binding IsNoDialogOpen}">
             <MenuItem Header="_Help">
                 <MenuItem Header="_Keyboard Shortcuts" Command="{Binding ShowShortcutsCommand}"/>
                 <Separator/>
@@ -53,7 +53,7 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10">
+            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10" IsEnabled="{Binding IsNoDialogOpen}">
                 <Button Command="{Binding OpenDirectoryCommand}" Content="_Open Directory"/>
                 <Button Command="{Binding AddCustomTonieCommand}" Content="_Add Custom Tonie" IsEnabled="{Binding HasValidDirectory}"/>
                 <Button Command="{Binding DecodeSelectedCommand}" Content="_Decode Selected"/>
@@ -76,7 +76,7 @@
                 </StackPanel>
             </StackPanel>
 
-            <Border Grid.Row="1" BorderBrush="#CCCCCC" BorderThickness="1">
+            <Border Grid.Row="1" BorderBrush="#CCCCCC" BorderThickness="1" IsEnabled="{Binding IsNoDialogOpen}">
                 <ScrollViewer>
                     <ListBox ItemsSource="{Binding TonieFiles}"
                              SelectedItem="{Binding SelectedFile}"
