@@ -22,18 +22,11 @@
     </Design.DataContext>
 
     <DockPanel>
-        <Menu DockPanel.Dock="Top" IsEnabled="{Binding IsNoDialogOpen}">
-            <MenuItem Header="_Help">
-                <MenuItem Header="_Keyboard Shortcuts" Command="{Binding ShowShortcutsCommand}"/>
-                <Separator/>
-                <MenuItem Header="_About" Command="{Binding AboutCommand}"/>
-            </MenuItem>
-        </Menu>
-
         <Border DockPanel.Dock="Bottom" Background="#2C3E50" Padding="5">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <TextBlock Grid.Column="0" Text="{Binding StatusText}" Foreground="White" VerticalAlignment="Center"/>
@@ -43,6 +36,35 @@
                              Margin="10,0,0,0"
                              IsIndeterminate="{Binding IsScanning}"
                              IsVisible="{Binding IsScanning}"/>
+
+                <!-- Floating Action Button for Help -->
+                <Button Grid.Column="2"
+                        Width="40"
+                        Height="40"
+                        Margin="10,0,0,0"
+                        Background="#3498db"
+                        CornerRadius="20"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center"
+                        IsEnabled="{Binding IsNoDialogOpen}"
+                        ToolTip.Tip="Help">
+                    <Button.Styles>
+                        <Style Selector="Button:pointerover">
+                            <Setter Property="Background" Value="#2980b9"/>
+                        </Style>
+                        <Style Selector="Button:pressed">
+                            <Setter Property="Background" Value="#21618c"/>
+                        </Style>
+                    </Button.Styles>
+                    <Button.Flyout>
+                        <MenuFlyout Placement="TopEdgeAlignedRight">
+                            <MenuItem Header="_Keyboard Shortcuts" Command="{Binding ShowShortcutsCommand}"/>
+                            <Separator/>
+                            <MenuItem Header="_About" Command="{Binding AboutCommand}"/>
+                        </MenuFlyout>
+                    </Button.Flyout>
+                    <TextBlock Text="?" FontSize="20" FontWeight="Bold" Foreground="White"/>
+                </Button>
             </Grid>
         </Border>
 
