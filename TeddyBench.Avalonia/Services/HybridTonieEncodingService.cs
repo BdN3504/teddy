@@ -33,9 +33,88 @@ public class HybridTonieEncodingService
 
     /// <summary>
     /// Encodes a custom tonie from a mix of original and new tracks.
-    /// Original tracks are copied directly (no re-encoding), new tracks are encoded.
+    /// Uses the new simpler approach: extracts original tracks to temp Ogg files,
+    /// then re-encodes all tracks together using the proven GenerateAudio() path.
+    /// This avoids the complex manual Ogg stream manipulation that was causing playback issues.
     /// </summary>
     public (byte[] FileContent, string Hash) EncodeHybridTonie(
+        List<TrackSourceInfo> tracks,
+        uint audioId,
+        string originalTonieFilePath,
+        int bitRate = 96)
+    {
+        // Check if we have any original tracks
+        var hasOriginalTracks = tracks.Any(t => t.IsOriginal);
+
+        // If all tracks are new, just use regular encoding
+        if (!hasOriginalTracks)
+        {
+            var audioPaths = tracks.Select(t => t.AudioFilePath!).ToArray();
+            TonieAudio generatedAudio = new TonieAudio(audioPaths, audioId, bitRate * 1000, false, null);
+            string resultHash = BitConverter.ToString(generatedAudio.Header.Hash).Replace("-", "");
+            return (generatedAudio.FileContent, resultHash);
+        }
+
+        // NEW APPROACH: Extract original tracks to temp Ogg files using ffmpeg splitting
+        // This preserves exact chapter boundaries by using granule positions
+        var originalAudio = TonieAudio.FromFile(originalTonieFilePath);
+        List<string> extractedTrackFiles = originalAudio.ExtractTracksToTempFiles();
+
+        try
+        {
+            // Build list of all track file paths in correct order
+            var allTrackPaths = new List<string>();
+
+            for (int i = 0; i < tracks.Count; i++)
+            {
+                var track = tracks[i];
+
+                if (track.IsOriginal && track.OriginalTrackIndex >= 0 && track.OriginalTrackIndex < extractedTrackFiles.Count)
+                {
+                    // Use extracted temp Ogg file for original track
+                    allTrackPaths.Add(extractedTrackFiles[track.OriginalTrackIndex]);
+                }
+                else
+                {
+                    // Use file path for new tracks
+                    allTrackPaths.Add(track.AudioFilePath!);
+                }
+            }
+
+            // Use regular encoding path - simpler and more reliable!
+            // All tracks get re-encoded, but Opus at 96kbps degrades gracefully
+            TonieAudio hybridAudio = new TonieAudio(allTrackPaths.ToArray(), audioId, bitRate * 1000, false, null);
+
+            string hybridHash = BitConverter.ToString(hybridAudio.Header.Hash).Replace("-", "");
+            return (hybridAudio.FileContent, hybridHash);
+        }
+        finally
+        {
+            // Clean up temporary extracted track files
+            foreach (var tempFile in extractedTrackFiles)
+            {
+                try
+                {
+                    if (File.Exists(tempFile))
+                    {
+                        File.Delete(tempFile);
+                    }
+                }
+                catch
+                {
+                    // Ignore cleanup errors
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// LEGACY: Old approach using manual Ogg stream manipulation.
+    /// Kept for reference but no longer used due to playback issues.
+    /// Original tracks are copied directly (no re-encoding), new tracks are encoded.
+    /// </summary>
+    [Obsolete("This method has playback issues. Use EncodeHybridTonie() instead which uses the ffmpeg splitting approach.")]
+    public (byte[] FileContent, string Hash) EncodeHybridTonieLegacy(
         List<TrackSourceInfo> tracks,
         uint audioId,
         string originalTonieFilePath,

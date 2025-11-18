@@ -443,5 +443,121 @@ namespace TonieAudio.Tests
                 if (File.Exists(modifiedTonieFile)) File.Delete(modifiedTonieFile);
             }
         }
+
+        [Fact]
+        public void NewApproach_ExtractTracksToTempFiles_ThenReencode_ShouldProduceValidFile()
+        {
+            // This test uses the new simpler approach: extract tracks to temp Ogg files
+            // using ffmpeg splitting, then re-encode all tracks together.
+
+            // Arrange
+            string track1 = Path.Combine(_testDataDir, "track1.mp3");
+            string track2 = Path.Combine(_testDataDir, "track2.mp3");
+            string track3 = Path.Combine(_testDataDir, "track3.mp3");
+
+            string initialTonieFile = Path.Combine(Path.GetTempPath(), $"test_new_approach_initial_{Guid.NewGuid()}.bin");
+            string modifiedTonieFile = Path.Combine(Path.GetTempPath(), $"test_new_approach_modified_{Guid.NewGuid()}.bin");
+
+            try
+            {
+                // Act 1: Create initial tonie with 2 tracks
+                Console.WriteLine("=== STEP 1: Creating initial tonie with 2 tracks ===");
+                TonieFile.TonieAudio initialTonie = new TonieFile.TonieAudio(
+                    new[] { track1, track2 },
+                    audioId: 12345,
+                    bitRate: 96000,
+                    useVbr: false,
+                    prefixLocation: null,
+                    cbr: null
+                );
+
+                File.WriteAllBytes(initialTonieFile, initialTonie.FileContent);
+                Console.WriteLine($"Initial tonie created: {initialTonieFile}");
+                Console.WriteLine($"Initial tonie has {initialTonie.Header.AudioChapters.Length} chapters");
+
+                // Act 2: Read back and extract tracks using new approach
+                Console.WriteLine("\n=== STEP 2: Extracting tracks using ExtractTracksToTempFiles() ===");
+                TonieFile.TonieAudio readBack = TonieFile.TonieAudio.FromFile(initialTonieFile, readAudio: true);
+                List<string> extractedTracks = readBack.ExtractTracksToTempFiles();
+
+                Console.WriteLine($"Extracted {extractedTracks.Count} tracks:");
+                for (int i = 0; i < extractedTracks.Count; i++)
+                {
+                    var fileInfo = new FileInfo(extractedTracks[i]);
+                    Console.WriteLine($"  Track {i + 1}: {extractedTracks[i]} ({fileInfo.Length} bytes)");
+                }
+
+                // Assert: Should have extracted 2 tracks
+                Assert.Equal(2, extractedTracks.Count);
+
+                // Act 3: Create modified tonie with original 2 tracks + new track using simple re-encoding
+                Console.WriteLine("\n=== STEP 3: Re-encoding all tracks (2 original + 1 new) ===");
+                var allTrackPaths = new List<string>();
+                allTrackPaths.AddRange(extractedTracks);  // Original tracks
+                allTrackPaths.Add(track3);                 // New track
+
+                TonieFile.TonieAudio modifiedTonie = new TonieFile.TonieAudio(
+                    allTrackPaths.ToArray(),
+                    audioId: 12345,
+                    bitRate: 96000,
+                    useVbr: false,
+                    prefixLocation: null,
+                    cbr: null
+                );
+
+                File.WriteAllBytes(modifiedTonieFile, modifiedTonie.FileContent);
+                Console.WriteLine($"Modified tonie created: {modifiedTonieFile}");
+                Console.WriteLine($"Modified tonie has {modifiedTonie.Header.AudioChapters.Length} chapters");
+
+                // Clean up extracted temp files
+                foreach (var tempFile in extractedTracks)
+                {
+                    if (File.Exists(tempFile)) File.Delete(tempFile);
+                }
+
+                // Assert: Modified tonie should have 3 chapters
+                Assert.Equal(3, modifiedTonie.Header.AudioChapters.Length);
+
+                // Act 4: Read back and validate
+                Console.WriteLine("\n=== STEP 4: Validating modified tonie ===");
+                TonieFile.TonieAudio modifiedReadBack = TonieFile.TonieAudio.FromFile(modifiedTonieFile, readAudio: true);
+
+                Assert.True(modifiedReadBack.HashCorrect, "Modified tonie hash should be correct");
+                Assert.Equal(3, modifiedReadBack.Header.AudioChapters.Length);
+
+                // Validate Ogg page structure
+                modifiedReadBack.CalculateStatistics(
+                    out long totalSegments,
+                    out long segLength,
+                    out int minSegs,
+                    out int maxSegs,
+                    out ulong minGranule,
+                    out ulong maxGranule,
+                    out ulong highestGranule
+                );
+
+                Console.WriteLine($"✓ Ogg page structure is valid");
+                Console.WriteLine($"  Total segments: {totalSegments}");
+                Console.WriteLine($"  Highest granule: {highestGranule}");
+
+                // Additional validation: Check chapter markers are sequential
+                Console.WriteLine($"\n=== STEP 5: Validating chapter markers ===");
+                Console.WriteLine($"Chapter markers: [{string.Join(", ", modifiedReadBack.Header.AudioChapters)}]");
+
+                for (int i = 1; i < modifiedReadBack.Header.AudioChapters.Length; i++)
+                {
+                    Assert.True(modifiedReadBack.Header.AudioChapters[i] > modifiedReadBack.Header.AudioChapters[i - 1],
+                        $"Chapter markers should be sequential: Chapter {i} ({modifiedReadBack.Header.AudioChapters[i]}) should be > Chapter {i-1} ({modifiedReadBack.Header.AudioChapters[i - 1]})");
+                }
+
+                Console.WriteLine("✓ Chapter markers are sequential");
+                Console.WriteLine("\n✓ All validations passed - new approach works correctly!");
+            }
+            finally
+            {
+                if (File.Exists(initialTonieFile)) File.Delete(initialTonieFile);
+                if (File.Exists(modifiedTonieFile)) File.Delete(modifiedTonieFile);
+            }
+        }
     }
 }

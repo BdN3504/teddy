@@ -1654,6 +1654,115 @@ namespace TonieFile
         }
 
         /// <summary>
+        /// Extracts tracks to temporary Ogg files by splitting at exact chapter boundaries.
+        /// This is simpler and more reliable than manual Ogg stream manipulation.
+        /// Uses ffmpeg to split the Ogg stream at precise timestamps derived from granule positions.
+        /// Returns paths to temporary Ogg files (caller is responsible for cleanup).
+        /// </summary>
+        public List<string> ExtractTracksToTempFiles(string tempDirectory = null)
+        {
+            if (tempDirectory == null)
+            {
+                tempDirectory = Path.GetTempPath();
+            }
+
+            List<string> trackFiles = new List<string>();
+
+            // If no chapters, extract entire audio as single track
+            if (Header.AudioChapters.Length == 0)
+            {
+                string singleTrackFile = Path.Combine(tempDirectory, $"track_0_{Guid.NewGuid()}.ogg");
+                File.WriteAllBytes(singleTrackFile, Audio);
+                trackFiles.Add(singleTrackFile);
+                return trackFiles;
+            }
+
+            // Get precise timestamps for each chapter
+            ulong[] granulePositions = ParsePositions();
+
+            // Convert granules to seconds (48000 granules per second)
+            double[] timestamps = granulePositions.Select(g => g / 48000.0).ToArray();
+
+            // Write full Ogg to temp file (this is the "dd bs=4096 skip=1" equivalent)
+            string fullOggFile = Path.Combine(tempDirectory, $"full_audio_{Guid.NewGuid()}.ogg");
+            File.WriteAllBytes(fullOggFile, Audio);
+
+            try
+            {
+                // Split the Ogg at each chapter boundary using ffmpeg
+                // ParsePositions returns: [start, chapter1_start, chapter2_start, ..., end]
+                // For N chapters, we expect N+1 or N+2 positions (start, chapters, potentially end)
+
+                // Determine actual chapter count based on header
+                int chapterCount = Header.AudioChapters.Length;
+
+                for (int i = 0; i < chapterCount; i++)
+                {
+                    string trackFile = Path.Combine(tempDirectory, $"track_{i}_{Guid.NewGuid()}.ogg");
+
+                    // Start time is the chapter's position
+                    // For first chapter (i=0), if AudioChapters[0]=0, then timestamps might have duplicates
+                    // We need to find the actual start of this chapter in the timestamps array
+
+                    // The timestamps array from ParsePositions includes:
+                    // - Position 0 (always 0)
+                    // - One position for each AudioChapters entry
+                    // - Final position (end of audio)
+
+                    // So for chapter i, we want:
+                    // - Start: timestamps[i+1] (because timestamps[0] is always 0, then AudioChapters positions)
+                    // - End: timestamps[i+2] or end of file
+
+                    double startTime = timestamps[i + 1];
+                    double endTime = (i + 2 < timestamps.Length) ? timestamps[i + 2] : timestamps[timestamps.Length - 1];
+
+                    // Use ffmpeg to extract this segment
+                    // -ss: start time, -to: end time
+                    // -c copy: copy codec (no re-encoding at this stage, just container manipulation)
+                    var processInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "ffmpeg",
+                        Arguments = $"-i \"{fullOggFile}\" -ss {startTime:F6} -to {endTime:F6} -c copy -y \"{trackFile}\"",
+                        RedirectStandardOutput = true,
+                        RedirectStandardError = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    };
+
+                    using (var process = System.Diagnostics.Process.Start(processInfo))
+                    {
+                        process.WaitForExit();
+
+                        if (process.ExitCode != 0)
+                        {
+                            string error = process.StandardError.ReadToEnd();
+                            throw new Exception($"ffmpeg failed to extract track {i}: {error}");
+                        }
+                    }
+
+                    if (File.Exists(trackFile) && new FileInfo(trackFile).Length > 0)
+                    {
+                        trackFiles.Add(trackFile);
+                    }
+                    else
+                    {
+                        throw new Exception($"Failed to extract track {i}: output file is empty or doesn't exist");
+                    }
+                }
+            }
+            finally
+            {
+                // Clean up the full Ogg temp file
+                if (File.Exists(fullOggFile))
+                {
+                    File.Delete(fullOggFile);
+                }
+            }
+
+            return trackFiles;
+        }
+
+        /// <summary>
         /// Writes a raw chapter data to a proper Ogg file with correct headers.
         /// This creates a valid standalone Ogg file from raw chapter pages.
         /// </summary>
