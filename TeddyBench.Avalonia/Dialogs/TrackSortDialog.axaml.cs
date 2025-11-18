@@ -6,7 +6,7 @@ using System.Linq;
 
 namespace TeddyBench.Avalonia.Dialogs;
 
-public partial class TrackSortDialog : Window
+public partial class TrackSortDialog : TonieDialogBase
 {
     private TrackSortDialogViewModel? _viewModel;
 
@@ -39,30 +39,17 @@ public partial class TrackSortDialog : Window
             };
         }
 
-        // Handle keyboard shortcuts at the Window level
-        AddHandler(KeyDownEvent, TrackSortDialog_KeyDown, handledEventsToo: true);
-
         // Set focus to Encode button when dialog opens so mnemonics work immediately
-        Opened += (s, e) =>
+        Opened += async (s, e) =>
         {
-            var encodeButton = this.FindControl<Button>("EncodeButton");
-            if (encodeButton != null)
-            {
-                encodeButton.Focus();
-            }
+            await FocusButtonDelayed("EncodeButton");
         };
     }
 
-    private void TrackSortDialog_KeyDown(object? sender, KeyEventArgs e)
+    // Override to handle ESC specifically for this dialog (returns false instead of just closing)
+    protected override void OnEscapePressed()
     {
-        // ESC to close (this is the only non-mnemonic shortcut)
-        if (e.Key == Key.Escape)
-        {
-            Close(false);
-            e.Handled = true;
-        }
-        // Note: All Alt+key shortcuts are handled by button mnemonics now
-        // (Alt+U, Alt+D, Alt+A, Alt+R, Alt+E, Alt+C work automatically)
+        Close(false);
     }
 
     private void InitializeComponent()

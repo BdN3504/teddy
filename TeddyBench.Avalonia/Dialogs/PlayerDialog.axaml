@@ -69,7 +69,8 @@
             </Button>
 
             <!-- Play/Pause Button -->
-            <Button Command="{Binding PlayPauseCommand}"
+            <Button Name="PlayPauseButton"
+                    Command="{Binding PlayPauseCommand}"
                     Width="40" Height="40"
                     CornerRadius="8"
                     Padding="0"
@@ -78,7 +79,8 @@
             </Button>
 
             <!-- Stop Button -->
-            <Button Command="{Binding StopCommand}"
+            <Button Name="StopButton"
+                    Command="{Binding StopCommand}"
                     IsEnabled="{Binding CanStop}"
                     Width="40" Height="40"
                     ToolTip.Tip="Stop"

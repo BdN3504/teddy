@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using System.Collections;
+using System.Collections.Generic;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -15,6 +16,8 @@ namespace TeddyBench.Avalonia.Views;
 
 public partial class MainWindow : Window
 {
+    private readonly HashSet<Key> _pressedKeys = new HashSet<Key>();
+
     public MainWindow()
     {
         InitializeComponent();
@@ -29,8 +32,24 @@ public partial class MainWindow : Window
         // Hook into window opened event to auto-open directory picker
         Opened += MainWindow_Opened;
 
+        // Hook into key up event for debouncing
+        KeyUp += MainWindow_KeyUp;
+
         // Hook into key down event for keyboard shortcuts
         KeyDown += MainWindow_KeyDown;
+
+        // Monitor IsAnyDialogOpen to clear pressed keys when dialogs close
+        // This prevents stale key states if keys were released while dialog was open
+        viewModel.PropertyChanged += (s, e) =>
+        {
+            if (e.PropertyName == nameof(MainWindowViewModel.IsAnyDialogOpen))
+            {
+                if (!viewModel.IsAnyDialogOpen && _pressedKeys.Count > 0)
+                {
+                    _pressedKeys.Clear();
+                }
+            }
+        };
     }
 
     private async void MainWindow_Opened(object? sender, EventArgs e)
@@ -154,14 +173,39 @@ public partial class MainWindow : Window
         }
     }
 
+    private void MainWindow_KeyUp(object? sender, KeyEventArgs e)
+    {
+        // Ignore KeyUp when dialog is open - prevents spurious releases when focus changes
+        // This ensures held keys stay "pressed" until dialog closes AND user releases them
+        if (DataContext is MainWindowViewModel viewModel && viewModel.IsAnyDialogOpen)
+        {
+            return;
+        }
+
+        // Key released - allow it to be processed again
+        _pressedKeys.Remove(e.Key);
+    }
+
     private async void MainWindow_KeyDown(object? sender, KeyEventArgs e)
     {
         if (DataContext is not MainWindowViewModel viewModel)
             return;
 
+        // Key debouncing: ignore repeated KeyDown events from holding a key
+        if (_pressedKeys.Contains(e.Key))
+        {
+            e.Handled = true;
+            return;
+        }
+
+        // Mark this key as pressed
+        _pressedKeys.Add(e.Key);
+
         // Disable main window shortcuts when any dialog is open
         if (viewModel.IsAnyDialogOpen)
+        {
             return;
+        }
 
         // Get the ListBox
         var listBox = this.FindControl<ListBox>("TonieListBox");
