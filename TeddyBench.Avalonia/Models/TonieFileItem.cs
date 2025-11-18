@@ -30,4 +30,7 @@ public partial class TonieFileItem : ObservableObject
 
     [ObservableProperty]
     private bool _isCustomTonie;
+
+    [ObservableProperty]
+    private string _gridPosition = string.Empty;
 }

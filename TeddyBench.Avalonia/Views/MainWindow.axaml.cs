@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using System.Collections;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
@@ -14,10 +15,19 @@ using System.ComponentModel;
 
 namespace TeddyBench.Avalonia.Views;
 
+internal enum NavigationDirection
+{
+    Up,
+    Down,
+    Left,
+    Right
+}
+
 public partial class MainWindow : Window
 {
     private readonly HashSet<Key> _pressedKeys = new HashSet<Key>();
     private bool _shouldFocusFirstItem = false;
+    private List<List<TonieFileItem>>? _cachedGrid = null;
 
     public MainWindow()
     {
@@ -37,7 +47,11 @@ public partial class MainWindow : Window
         KeyUp += MainWindow_KeyUp;
 
         // Hook into key down event for keyboard shortcuts
-        KeyDown += MainWindow_KeyDown;
+        // Use AddHandler with handledEventsToo to intercept keys before ListBox handles them
+        AddHandler(KeyDownEvent, MainWindow_KeyDown, global::Avalonia.Interactivity.RoutingStrategies.Tunnel, true);
+
+        // Recalculate grid when window is resized
+        PropertyChanged += MainWindow_PropertyChanged;
 
         // Monitor IsAnyDialogOpen to clear pressed keys when dialogs close
         // This prevents stale key states if keys were released while dialog was open
@@ -53,10 +67,15 @@ public partial class MainWindow : Window
             // Monitor for when scanning completes and tonies are loaded
             else if (e.PropertyName == nameof(MainWindowViewModel.IsScanning))
             {
-                if (!viewModel.IsScanning && viewModel.TonieFiles.Count > 0 && _shouldFocusFirstItem)
+                if (!viewModel.IsScanning && viewModel.TonieFiles.Count > 0)
                 {
-                    _shouldFocusFirstItem = false;
-                    FocusFirstTonieItem();
+                    if (_shouldFocusFirstItem)
+                    {
+                        _shouldFocusFirstItem = false;
+                        FocusFirstTonieItem();
+                    }
+                    // Update debug positions after scanning completes
+                    UpdateGridPositions();
                 }
             }
             // Set flag when directory changes to focus first item after scan
@@ -97,6 +116,23 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel viewModel)
         {
             await viewModel.AutoOpenDirectoryOnStartup();
+        }
+    }
+
+    private void MainWindow_PropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
+    {
+        // When window bounds change, recalculate the grid after a short delay
+        if (e.Property.Name == nameof(Bounds))
+        {
+            // Use a timer to debounce resize events
+            _ = Task.Run(async () =>
+            {
+                await Task.Delay(300); // Wait for resize to finish
+                await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    UpdateGridPositions();
+                });
+            });
         }
     }
 
@@ -254,8 +290,22 @@ public partial class MainWindow : Window
         int selectionCount = listBox.SelectedItems?.Count ?? 0;
         TonieFileItem? selectedItem = listBox.SelectedItem as TonieFileItem;
 
+        // Handle all arrow keys for 2D grid navigation
+        if ((e.Key == Key.Up || e.Key == Key.Down || e.Key == Key.Left || e.Key == Key.Right) && selectionCount == 1 && selectedItem != null)
+        {
+            NavigationDirection direction = e.Key switch
+            {
+                Key.Up => NavigationDirection.Up,
+                Key.Down => NavigationDirection.Down,
+                Key.Left => NavigationDirection.Left,
+                Key.Right => NavigationDirection.Right,
+                _ => NavigationDirection.Right
+            };
+            HandleGridNavigation(listBox, selectedItem, direction);
+            e.Handled = true;
+        }
         // F2 key - Rename (only for custom tonies)
-        if (e.Key == Key.F2 && selectionCount == 1 && selectedItem != null)
+        else if (e.Key == Key.F2 && selectionCount == 1 && selectedItem != null)
         {
             if (selectedItem.IsCustomTonie)
             {
@@ -291,5 +341,154 @@ public partial class MainWindow : Window
                 e.Handled = true;
             }
         }
+    }
+
+    private void HandleGridNavigation(ListBox listBox, TonieFileItem currentItem, NavigationDirection direction)
+    {
+        if (_cachedGrid == null || _cachedGrid.Count == 0)
+            return;
+
+        // Find current item's position in the cached grid
+        int currentRow = -1;
+        int currentCol = -1;
+
+        for (int r = 0; r < _cachedGrid.Count; r++)
+        {
+            for (int c = 0; c < _cachedGrid[r].Count; c++)
+            {
+                if (_cachedGrid[r][c] == currentItem)
+                {
+                    currentRow = r;
+                    currentCol = c;
+                    break;
+                }
+            }
+            if (currentRow >= 0) break;
+        }
+
+        if (currentRow < 0)
+            return;
+
+        // Calculate target position based on direction
+        int targetRow = currentRow;
+        int targetCol = currentCol;
+        TonieFileItem? targetItem = null;
+
+        switch (direction)
+        {
+            case NavigationDirection.Left:
+                if (currentCol > 0)
+                {
+                    targetItem = _cachedGrid[currentRow][currentCol - 1];
+                }
+                break;
+
+            case NavigationDirection.Right:
+                if (currentCol < _cachedGrid[currentRow].Count - 1)
+                {
+                    targetItem = _cachedGrid[currentRow][currentCol + 1];
+                }
+                break;
+
+            case NavigationDirection.Up:
+                if (currentRow > 0)
+                {
+                    targetRow = currentRow - 1;
+                    targetCol = Math.Min(currentCol, _cachedGrid[targetRow].Count - 1);
+                    targetItem = _cachedGrid[targetRow][targetCol];
+                }
+                break;
+
+            case NavigationDirection.Down:
+                if (currentRow < _cachedGrid.Count - 1)
+                {
+                    targetRow = currentRow + 1;
+                    targetCol = Math.Min(currentCol, _cachedGrid[targetRow].Count - 1);
+                    targetItem = _cachedGrid[targetRow][targetCol];
+                }
+                break;
+        }
+
+        // Select the target item if found
+        if (targetItem != null)
+        {
+            listBox.SelectedItem = targetItem;
+            listBox.ScrollIntoView(targetItem);
+        }
+    }
+
+    private async void UpdateGridPositions()
+    {
+        // Wait for UI to render
+        await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            // Give the UI a moment to fully render the items
+            await Task.Delay(200);
+
+            var listBox = this.FindControl<ListBox>("TonieListBox");
+            if (listBox == null || listBox.ItemCount == 0)
+                return;
+
+            // Get all item containers with their visual positions
+            var itemsWithPositions = new List<(int index, double x, double y, TonieFileItem item)>();
+
+            for (int i = 0; i < listBox.ItemCount; i++)
+            {
+                var container = listBox.ContainerFromIndex(i) as Control;
+                if (container != null)
+                {
+                    var position = container.TranslatePoint(new Point(0, 0), listBox);
+                    if (position.HasValue)
+                    {
+                        var item = listBox.Items.Cast<object>().ElementAtOrDefault(i) as TonieFileItem;
+                        if (item != null)
+                        {
+                            itemsWithPositions.Add((i, position.Value.X, position.Value.Y, item));
+                        }
+                    }
+                }
+            }
+
+            if (itemsWithPositions.Count == 0)
+                return;
+
+            // Group items into rows based on Y position
+            var rows = new List<List<(int index, double x, double y, TonieFileItem item)>>();
+            var sortedByY = itemsWithPositions.OrderBy(x => x.y).ToList();
+
+            double rowTolerance = 10;
+            List<(int index, double x, double y, TonieFileItem item)>? currentRow = null;
+            double currentRowY = 0;
+
+            foreach (var item in sortedByY)
+            {
+                if (currentRow == null || Math.Abs(item.y - currentRowY) > rowTolerance)
+                {
+                    currentRow = new List<(int index, double x, double y, TonieFileItem item)>();
+                    rows.Add(currentRow);
+                    currentRowY = item.y;
+                }
+                currentRow.Add(item);
+            }
+
+            // Sort items within each row by X position
+            foreach (var row in rows)
+            {
+                row.Sort((a, b) => a.x.CompareTo(b.x));
+            }
+
+            // Cache the grid structure for navigation
+            _cachedGrid = new List<List<TonieFileItem>>();
+            for (int r = 0; r < rows.Count; r++)
+            {
+                var gridRow = new List<TonieFileItem>();
+                for (int c = 0; c < rows[r].Count; c++)
+                {
+                    gridRow.Add(rows[r][c].item);
+                    rows[r][c].item.GridPosition = $"[{r}:{c}]";
+                }
+                _cachedGrid.Add(gridRow);
+            }
+        }, global::Avalonia.Threading.DispatcherPriority.Background);
     }
 }
