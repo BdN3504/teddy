@@ -282,6 +282,14 @@ public partial class MainWindow : Window
             return;
         }
 
+        // ESC key - Clear search if active
+        if (e.Key == Key.Escape && viewModel.IsSearchActive)
+        {
+            viewModel.ClearSearchCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+
         // Get the ListBox
         var listBox = this.FindControl<ListBox>("TonieListBox");
         if (listBox == null) return;
@@ -341,6 +349,32 @@ public partial class MainWindow : Window
                 e.Handled = true;
             }
         }
+        // Handle text input for search (alphanumeric and basic punctuation)
+        else if (e.KeySymbol != null && !string.IsNullOrEmpty(e.KeySymbol) && IsSearchableCharacter(e.KeySymbol))
+        {
+            // Add character to search
+            viewModel.HandleSearchInput(viewModel.SearchText + e.KeySymbol);
+            e.Handled = true;
+        }
+        // Backspace - Remove last character from search
+        else if (e.Key == Key.Back && viewModel.IsSearchActive)
+        {
+            if (viewModel.SearchText.Length > 0)
+            {
+                viewModel.HandleSearchInput(viewModel.SearchText[..^1]);
+            }
+            e.Handled = true;
+        }
+    }
+
+    private bool IsSearchableCharacter(string keySymbol)
+    {
+        // Allow alphanumeric characters, spaces, and some basic punctuation
+        if (keySymbol.Length != 1)
+            return false;
+
+        char c = keySymbol[0];
+        return char.IsLetterOrDigit(c) || c == ' ' || c == '-' || c == '_';
     }
 
     private void HandleGridNavigation(ListBox listBox, TonieFileItem currentItem, NavigationDirection direction)

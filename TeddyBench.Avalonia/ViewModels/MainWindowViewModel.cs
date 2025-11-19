@@ -15,6 +15,7 @@ using TeddyBench.Avalonia.Models;
 using TeddyBench.Avalonia.Dialogs;
 using TeddyBench.Avalonia.Utilities;
 using System.Diagnostics;
+using System.Threading;
 
 namespace TeddyBench.Avalonia.ViewModels;
 
@@ -33,6 +34,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool _isRenameDialogOpen = false;
     private bool _isDeleteDialogOpen = false;
     private bool _isShortcutsDialogOpen = false;
+    private CancellationTokenSource? _searchDebounceToken;
+    private List<TonieFileItem> _allTonieFiles = new();
 
     /// <summary>
     /// Returns true if any dialog is currently open.
@@ -210,6 +213,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private SortOptionItem? _currentSortOption;
 
+    [ObservableProperty]
+    private string _searchText = string.Empty;
+
+    [ObservableProperty]
+    private bool _isSearchActive = false;
+
     public bool HasSelectedFile => SelectedFile != null && (SelectedItems?.Count ?? 0) <= 1;
     public bool HasValidDirectory => !string.IsNullOrEmpty(CurrentDirectory);
     public bool HasMultipleSelection => (SelectedItems?.Count ?? 0) > 1;
@@ -241,6 +250,30 @@ public partial class MainWindowViewModel : ViewModelBase
                 ApplySorting();
             }
         }
+    }
+
+    partial void OnSearchTextChanged(string value)
+    {
+        // Cancel any pending search
+        _searchDebounceToken?.Cancel();
+        _searchDebounceToken = new CancellationTokenSource();
+
+        var token = _searchDebounceToken.Token;
+
+        // Debounce the search with 250ms delay
+        _ = Task.Run(async () =>
+        {
+            await Task.Delay(250, token);
+
+            if (!token.IsCancellationRequested)
+            {
+                // Execute search on UI thread
+                await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+                {
+                    ApplySearchFilter();
+                });
+            }
+        });
     }
 
     [RelayCommand]
@@ -628,6 +661,99 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(HasSelectedFile));
         OnPropertyChanged(nameof(HasMultipleSelection));
+    }
+
+    [RelayCommand]
+    private void ClearSearch()
+    {
+        SearchText = string.Empty;
+        IsSearchActive = false;
+    }
+
+    public void HandleSearchInput(string input)
+    {
+        SearchText = input;
+        IsSearchActive = !string.IsNullOrWhiteSpace(input);
+    }
+
+    private void ApplySearchFilter()
+    {
+        if (string.IsNullOrWhiteSpace(SearchText))
+        {
+            // No search text - restore all files
+            TonieFiles.Clear();
+            foreach (var file in _allTonieFiles)
+            {
+                TonieFiles.Add(file);
+            }
+            ApplySorting();
+            return;
+        }
+
+        string searchLower = SearchText.ToLower();
+
+        // Filter files based on:
+        // 1. Display name (main title)
+        // 2. Audio ID (if search text is hex format)
+        // 3. UID/Containing folder name (both directions)
+        var filtered = _allTonieFiles.Where(file =>
+        {
+            // Search in display name
+            if (file.DisplayName.ToLower().Contains(searchLower))
+                return true;
+
+            // Search in directory name (UID)
+            if (file.DirectoryName.ToLower().Contains(searchLower))
+                return true;
+
+            // If search looks like a UID (8 hex chars), also try reversed version
+            // This allows searching by actual RFID (e.g., 1CC26DB1) to find folder B16DC21C
+            if (searchLower.Length == 8 && Regex.IsMatch(searchLower, "^[0-9a-f]+$"))
+            {
+                string reversedSearch = ReverseByteOrder(searchLower);
+                if (file.DirectoryName.ToLower().Contains(reversedSearch))
+                    return true;
+            }
+
+            // Try to parse as hex and search in Audio ID
+            if (searchLower.StartsWith("0x"))
+            {
+                // User typed hex format with 0x prefix
+                if (file.InfoText.ToLower().Contains(searchLower))
+                    return true;
+            }
+            else if (Regex.IsMatch(searchLower, "^[0-9a-f]+$"))
+            {
+                // User typed hex digits without 0x prefix
+                string hexSearch = "0x" + searchLower;
+                if (file.InfoText.ToLower().Contains(hexSearch))
+                    return true;
+            }
+
+            return false;
+        }).ToList();
+
+        TonieFiles.Clear();
+        foreach (var file in filtered)
+        {
+            TonieFiles.Add(file);
+        }
+
+        ApplySorting();
+    }
+
+    private string ReverseByteOrder(string hexString)
+    {
+        // Reverse byte order: "1CC26DB1" -> "B16DC21C"
+        if (hexString.Length % 2 != 0)
+            return hexString;
+
+        string reversed = "";
+        for (int i = hexString.Length - 2; i >= 0; i -= 2)
+        {
+            reversed += hexString.Substring(i, 2);
+        }
+        return reversed;
     }
 
     [RelayCommand]
@@ -1029,6 +1155,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         IsScanning = true;
         TonieFiles.Clear();
+        _allTonieFiles.Clear();
         StatusText = $"Directory selected: {directory}";
 
         await Task.Delay(100); // Brief delay to ensure UI updates
@@ -1048,14 +1175,30 @@ public partial class MainWindowViewModel : ViewModelBase
             // Use DirectoryScanService to scan the directory
             var scannedFiles = await _scanService.ScanDirectoryAsync(directory);
 
-            // Add all scanned files to the collection
+            // Store all files and populate InfoText with Audio ID for search
             foreach (var file in scannedFiles)
             {
+                // Try to read Audio ID for search purposes
+                try
+                {
+                    var audio = TonieAudio.FromFile(file.FilePath, false);
+                    file.InfoText = $"0x{audio.Header.AudioId:X8}";
+                }
+                catch
+                {
+                    file.InfoText = string.Empty;
+                }
+
+                _allTonieFiles.Add(file);
                 TonieFiles.Add(file);
             }
 
             // Apply sorting after loading files
             ApplySorting();
+
+            // Clear search when loading new directory
+            SearchText = string.Empty;
+            IsSearchActive = false;
         }
         catch (Exception ex)
         {

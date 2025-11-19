@@ -28,9 +28,35 @@
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <TextBlock Grid.Column="0" Text="{Binding StatusText}" Foreground="White" VerticalAlignment="Center"/>
-                <ProgressBar Grid.Column="1"
+
+                <!-- Status Text or Search Text -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal">
+                    <TextBlock Foreground="White" VerticalAlignment="Center" IsVisible="{Binding IsSearchActive}">
+                        <Run Text="Searching for: "/>
+                        <Run Text="{Binding SearchText}"/>
+                    </TextBlock>
+                    <TextBlock Text="{Binding StatusText}" Foreground="White" VerticalAlignment="Center" IsVisible="{Binding !IsSearchActive}"/>
+                </StackPanel>
+
+                <!-- Clear Search Button -->
+                <Button Grid.Column="1"
+                        Content="✕ Clear Search"
+                        Margin="10,0,0,0"
+                        Padding="8,4"
+                        Background="#e74c3c"
+                        Foreground="White"
+                        Command="{Binding ClearSearchCommand}"
+                        IsVisible="{Binding IsSearchActive}">
+                    <Button.Styles>
+                        <Style Selector="Button:pointerover">
+                            <Setter Property="Background" Value="#c0392b"/>
+                        </Style>
+                    </Button.Styles>
+                </Button>
+
+                <ProgressBar Grid.Column="2"
                              Width="200"
                              Height="20"
                              Margin="10,0,0,0"
@@ -38,7 +64,7 @@
                              IsVisible="{Binding IsScanning}"/>
 
                 <!-- Floating Action Button for Help -->
-                <Button Grid.Column="2"
+                <Button Grid.Column="3"
                         Width="40"
                         Height="40"
                         Margin="10,0,0,0"

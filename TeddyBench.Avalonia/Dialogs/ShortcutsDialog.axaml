@@ -47,6 +47,39 @@
         <TextBlock Grid.Row="3" Grid.Column="1" Text="Delete selected tonie(s)" Margin="0,3"/>
       </Grid>
 
+      <!-- Search Shortcuts Section -->
+      <TextBlock Text="Search"
+                 FontSize="14"
+                 FontWeight="Bold"
+                 Margin="0,10,0,10"/>
+
+      <TextBlock Text="Start typing to search. Search filters by display name, Audio ID (hex), containing folder name, or UID."
+                 FontStyle="Italic"
+                 TextWrapping="Wrap"
+                 Foreground="Gray"
+                 Margin="10,0,0,10"/>
+
+      <Grid Margin="10,0,0,15">
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="150"/>
+          <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+
+        <TextBlock Grid.Row="0" Grid.Column="0" Text="Type text" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,3"/>
+        <TextBlock Grid.Row="0" Grid.Column="1" Text="Search/filter tonies (debounced 250ms)" Margin="0,3"/>
+
+        <TextBlock Grid.Row="1" Grid.Column="0" Text="Backspace" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,3"/>
+        <TextBlock Grid.Row="1" Grid.Column="1" Text="Remove last character from search" Margin="0,3"/>
+
+        <TextBlock Grid.Row="2" Grid.Column="0" Text="Esc" FontFamily="Consolas" FontWeight="SemiBold" Margin="0,3"/>
+        <TextBlock Grid.Row="2" Grid.Column="1" Text="Clear search filter" Margin="0,3"/>
+      </Grid>
+
       <!-- Alt Key Shortcuts Section -->
       <TextBlock Text="Alt + Key Shortcuts (Main Window)"
                  FontSize="14"
