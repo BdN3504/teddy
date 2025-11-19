@@ -445,6 +445,81 @@ namespace TonieAudio.Tests
         }
 
         [Fact]
+        public void CreateMultipleTonies_WithoutExplicitAudioId_ShouldHaveUniqueAudioIds()
+        {
+            // This test verifies that each Tonie gets a unique Audio ID based on timestamp
+            // when no explicit Audio ID is provided.
+
+            // Arrange
+            string track1 = Path.Combine(_testDataDir, "track1.mp3");
+
+            string tonieFile1 = Path.Combine(Path.GetTempPath(), $"test_unique_id_1_{Guid.NewGuid()}.bin");
+            string tonieFile2 = Path.Combine(Path.GetTempPath(), $"test_unique_id_2_{Guid.NewGuid()}.bin");
+
+            try
+            {
+                // Act: Create first tonie without specifying audioId (defaults to timestamp)
+                Console.WriteLine("=== Creating first tonie (audioId=0, will use timestamp) ===");
+                TonieFile.TonieAudio tonie1 = new TonieFile.TonieAudio(
+                    new[] { track1 },
+                    audioId: 0,  // Will use current timestamp
+                    bitRate: 96000,
+                    useVbr: false,
+                    prefixLocation: null,
+                    cbr: null
+                );
+
+                File.WriteAllBytes(tonieFile1, tonie1.FileContent);
+                uint audioId1 = tonie1.Header.AudioId;
+                Console.WriteLine($"First tonie Audio ID: 0x{audioId1:X8}");
+
+                // Wait a moment to ensure different timestamps
+                System.Threading.Thread.Sleep(1500);
+
+                // Act: Create second tonie without specifying audioId
+                Console.WriteLine("\n=== Creating second tonie (audioId=0, will use timestamp) ===");
+                TonieFile.TonieAudio tonie2 = new TonieFile.TonieAudio(
+                    new[] { track1 },
+                    audioId: 0,  // Will use current timestamp
+                    bitRate: 96000,
+                    useVbr: false,
+                    prefixLocation: null,
+                    cbr: null
+                );
+
+                File.WriteAllBytes(tonieFile2, tonie2.FileContent);
+                uint audioId2 = tonie2.Header.AudioId;
+                Console.WriteLine($"Second tonie Audio ID: 0x{audioId2:X8}");
+
+                // Assert: Audio IDs should be different
+                Assert.NotEqual(audioId1, audioId2);
+                Console.WriteLine($"\n✓ Audio IDs are unique: 0x{audioId1:X8} != 0x{audioId2:X8}");
+
+                // Assert: Audio IDs should be sequential (approximately 1-2 seconds apart)
+                int timeDifference = (int)audioId2 - (int)audioId1;
+                Console.WriteLine($"Time difference: {timeDifference} seconds");
+                Assert.True(timeDifference >= 1 && timeDifference <= 3,
+                    $"Audio IDs should be ~1-2 seconds apart, got {timeDifference} seconds");
+
+                // Verify both files are valid
+                var readBack1 = TonieFile.TonieAudio.FromFile(tonieFile1, readAudio: true);
+                var readBack2 = TonieFile.TonieAudio.FromFile(tonieFile2, readAudio: true);
+
+                Assert.True(readBack1.HashCorrect, "First tonie should have correct hash");
+                Assert.True(readBack2.HashCorrect, "Second tonie should have correct hash");
+                Assert.Equal(audioId1, readBack1.Header.AudioId);
+                Assert.Equal(audioId2, readBack2.Header.AudioId);
+
+                Console.WriteLine("\n✓ Both tonies are valid and have unique Audio IDs");
+            }
+            finally
+            {
+                if (File.Exists(tonieFile1)) File.Delete(tonieFile1);
+                if (File.Exists(tonieFile2)) File.Delete(tonieFile2);
+            }
+        }
+
+        [Fact]
         public void NewApproach_ExtractTracksToTempFiles_ThenReencode_ShouldProduceValidFile()
         {
             // This test uses the new simpler approach: extract tracks to temp Ogg files

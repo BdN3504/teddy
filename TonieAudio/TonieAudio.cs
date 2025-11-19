@@ -1344,7 +1344,6 @@ namespace TonieFile
                 }
 
                 oggOut.Finish();
-                Header.AudioId = (uint) oggOut.LogicalStreamId;
             }
 
             cbr.PostProcessing("Finalizing audio stream...");
@@ -1355,6 +1354,7 @@ namespace TonieFile
             Header.Hash = prov.ComputeHash(Audio);
             Header.AudioChapters = chapters.ToArray();
             Header.AudioLength = Audio.Length;
+            Header.AudioId = audioId;
             Header.Padding = new byte[0];
 
             File.Delete(tempName);
