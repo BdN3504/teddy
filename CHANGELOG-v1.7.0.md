@@ -17,6 +17,16 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Auto-detects Toniebox SD cards and navigates to CONTENT folder
   - Audio playback with play/pause/stop controls and progress bar
   - Multi-selection support with Shift/Ctrl modifiers
+  - **Keyboard Navigation**
+    - Arrow keys for navigating between Tonies
+    - Space bar to play/pause audio
+    - Context menu accessible via keyboard (Menu key or Shift+F10)
+    - Alt-key shortcuts for all menu items (e.g., Alt+H for Help)
+    - Automatic focus on first Tonie after directory load
+  - **Help System**
+    - Built-in help dialog with hotkey reference
+    - Complete list of keyboard shortcuts
+    - Accessible via Help button or F1 key
 
 - **Custom Tonie Creation**
   - Multi-format audio file picker
@@ -49,6 +59,17 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
 - LibVLC integration for cross-platform audio playback
 - Opus encoding with configurable bitrate and VBR support
 - Proper Ogg page alignment (4096-byte boundaries)
+- Platform-specific LibVLC bundling (Windows/macOS bundled, Linux system-installed)
+- Optimized release binaries without debug symbols
+- .NET 8.0 compatibility (replaced deprecated APIs)
+
+### Bug Fixes
+- **Fixed audio-id generation bug** that could cause duplicate IDs across different custom Tonies
+- **Fixed space bar audio playback** issue where pressing and holding space caused buggy behavior
+- **Fixed modified Tonie playback** to ensure proper re-encoding for compatibility
+- **Fixed encoding progress dialog** now properly displays during Tonie modification workflow
+- Replaced deprecated `Thread.Abort()` for .NET 8.0 compatibility
+- Replaced deprecated `WebRequest` with `HttpClient` to eliminate SYSLIB0014 warnings
 
 ### Legal & Licensing
 - MIT License for Teddy codebase

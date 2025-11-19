@@ -75,16 +75,24 @@
                 <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
 
-            <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="10" Margin="0,0,0,10" IsEnabled="{Binding IsNoDialogOpen}">
-                <Button Command="{Binding OpenDirectoryCommand}" Content="_Open Directory"/>
-                <Button Command="{Binding AddCustomTonieCommand}" Content="_Add Custom Tonie" IsEnabled="{Binding HasValidDirectory}"/>
-                <Button Command="{Binding DecodeSelectedCommand}" Content="_Decode Selected"/>
-                <Button Command="{Binding ShowInfoCommand}" Content="_Show Info"/>
-                <Button Command="{Binding RefreshCommand}" Content="_Refresh"/>
-                <Button Command="{Binding RemoveAllLiveFlagsCommand}" Content="Remove All _LIVE Flags"/>
+            <Grid Grid.Row="0" Margin="0,0,0,10" IsEnabled="{Binding IsNoDialogOpen}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
 
-                <!-- Sort Dropdown -->
-                <StackPanel Orientation="Horizontal" Spacing="5" Margin="20,0,0,0">
+                <!-- Left-aligned buttons -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="10">
+                    <Button Command="{Binding OpenDirectoryCommand}" Content="_Open Directory"/>
+                    <Button Command="{Binding AddCustomTonieCommand}" Content="_Add Custom Tonie" IsEnabled="{Binding HasValidDirectory}"/>
+                    <Button Command="{Binding DecodeSelectedCommand}" Content="_Decode Selected"/>
+                    <Button Command="{Binding ShowInfoCommand}" Content="_Show Info"/>
+                    <Button Command="{Binding RefreshCommand}" Content="_Refresh"/>
+                    <Button Command="{Binding RemoveAllLiveFlagsCommand}" Content="Remove All _LIVE Flags"/>
+                </StackPanel>
+
+                <!-- Right-aligned sort dropdown -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="5">
                     <TextBlock Text="Sort by:" VerticalAlignment="Center" />
                     <ComboBox ItemsSource="{Binding SortOptions}"
                              SelectedItem="{Binding CurrentSortOption}"
@@ -96,7 +104,7 @@
                         </ComboBox.ItemTemplate>
                     </ComboBox>
                 </StackPanel>
-            </StackPanel>
+            </Grid>
 
             <Border Grid.Row="1" BorderBrush="#CCCCCC" BorderThickness="1" IsEnabled="{Binding IsNoDialogOpen}">
                 <ScrollViewer>

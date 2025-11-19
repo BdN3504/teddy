@@ -541,9 +541,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
-            var audio = TonieAudio.FromFile(SelectedFile.FilePath, false);
+            var audio = TonieAudio.FromFile(SelectedFile.FilePath, true);
 
-            SelectedFileDetails = $"File: {SelectedFile.FileName}\n" +
+            SelectedFileDetails = $"Containing Folder: {SelectedFile.DirectoryName}\n" +
                                 $"Audio ID: 0x{audio.Header.AudioId:X8}\n" +
                                 $"Audio Length: {audio.Header.AudioLength} bytes\n" +
                                 $"Chapters: {audio.Header.AudioChapters.Length}\n" +
@@ -746,9 +746,9 @@ public partial class MainWindowViewModel : ViewModelBase
             // Set as selected file so details show
             SelectedFile = file;
 
-            var audio = TonieAudio.FromFile(file.FilePath, false);
+            var audio = TonieAudio.FromFile(file.FilePath, true);
 
-            SelectedFileDetails = $"File: {file.FileName}\n" +
+            SelectedFileDetails = $"Containing Folder: {file.DirectoryName}\n" +
                                 $"Audio ID: 0x{audio.Header.AudioId:X8}\n" +
                                 $"Audio Length: {audio.Header.AudioLength} bytes\n" +
                                 $"Chapters: {audio.Header.AudioChapters.Length}\n" +
@@ -1088,7 +1088,7 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             var fileInfo = new FileInfo(file.FilePath);
-            SelectedFileDetails = $"File: {file.FileName}\n" +
+            SelectedFileDetails = $"Containing Folder: {file.DirectoryName}\n" +
                                 $"Size: {fileInfo.Length / 1024} KB\n" +
                                 $"Modified: {fileInfo.LastWriteTime}\n" +
                                 $"Path: {file.FilePath}";
