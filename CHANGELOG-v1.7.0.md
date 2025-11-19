@@ -27,6 +27,12 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
     - Built-in help dialog with hotkey reference
     - Complete list of keyboard shortcuts
     - Accessible via Help button or F1 key
+  - **Search Functionality**
+    - Real-time search with 250ms debounce
+    - Filters by display name, Audio ID (hex), folder name, or UID
+    - Supports reverse RFID lookup (search by actual RFID to find reversed folder)
+    - Clear search with ESC key
+    - Search field automatically appears when typing
 
 - **Custom Tonie Creation**
   - Multi-format audio file picker
@@ -64,6 +70,8 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
 - .NET 8.0 compatibility (replaced deprecated APIs)
 
 ### Bug Fixes
+- **Fixed hash validation error** when clicking "Show Info" on Tonie files
+- **Fixed sorting dropdown alignment** - now properly right-aligned in UI
 - **Fixed audio-id generation bug** that could cause duplicate IDs across different custom Tonies
 - **Fixed space bar audio playback** issue where pressing and holding space caused buggy behavior
 - **Fixed modified Tonie playback** to ensure proper re-encoding for compatibility
