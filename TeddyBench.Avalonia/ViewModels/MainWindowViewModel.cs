@@ -1877,4 +1877,97 @@ public partial class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsNoDialogOpen));
         }
     }
+
+    [RelayCommand]
+    private async Task CopyDirectoryPath()
+    {
+        if (SelectedFile == null)
+        {
+            StatusText = "No file selected";
+            return;
+        }
+
+        try
+        {
+            if (string.IsNullOrEmpty(SelectedFile.FilePath))
+            {
+                StatusText = "Unable to determine file path";
+                return;
+            }
+
+            // Use FileInfo to get the full directory path
+            var fileInfo = new FileInfo(SelectedFile.FilePath);
+            var directory = fileInfo.Directory?.FullName;
+
+            if (string.IsNullOrEmpty(directory))
+            {
+                StatusText = "Unable to determine directory path";
+                return;
+            }
+
+            var clipboard = _window.Clipboard;
+            if (clipboard != null)
+            {
+                await clipboard.SetTextAsync(directory);
+                StatusText = "Directory path copied to clipboard";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error copying to clipboard: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private void OpenContainingFolder()
+    {
+        if (SelectedFile == null)
+        {
+            StatusText = "No file selected";
+            return;
+        }
+
+        try
+        {
+            if (string.IsNullOrEmpty(SelectedFile.FilePath))
+            {
+                StatusText = "Unable to determine file path";
+                return;
+            }
+
+            // Use FileInfo to get the full directory path
+            var fileInfo = new FileInfo(SelectedFile.FilePath);
+            var directory = fileInfo.Directory?.FullName;
+
+            if (string.IsNullOrEmpty(directory) || !Directory.Exists(directory))
+            {
+                StatusText = $"Directory does not exist: {directory}";
+                return;
+            }
+
+            // Cross-platform directory opening
+            if (OperatingSystem.IsWindows())
+            {
+                Process.Start("explorer.exe", directory);
+            }
+            else if (OperatingSystem.IsLinux())
+            {
+                Process.Start("xdg-open", directory);
+            }
+            else if (OperatingSystem.IsMacOS())
+            {
+                Process.Start("open", directory);
+            }
+            else
+            {
+                StatusText = "Opening folders is not supported on this platform";
+            }
+
+            StatusText = "Opened containing folder";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error opening folder: {ex.Message}";
+        }
+    }
 }

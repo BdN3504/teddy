@@ -525,4 +525,17 @@ public partial class MainWindow : Window
             }
         }, global::Avalonia.Threading.DispatcherPriority.Background);
     }
+
+    private void FilePath_PointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        // Check if Ctrl key is pressed
+        var pointerProps = e.GetCurrentPoint(this);
+        var modifiers = e.KeyModifiers;
+
+        if (modifiers.HasFlag(KeyModifiers.Control) && DataContext is MainWindowViewModel viewModel)
+        {
+            viewModel.OpenContainingFolderCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
 }

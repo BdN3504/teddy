@@ -246,9 +246,56 @@
 
             <Border Grid.Row="2" BorderBrush="#CCCCCC" BorderThickness="1" Margin="0,10,0,0"
                     IsVisible="{Binding HasSelectedFile}">
-                <StackPanel Margin="10">
+                <StackPanel Margin="10" Spacing="8">
                     <TextBlock Text="Selected File Details:" FontWeight="Bold" Margin="0,0,0,5"/>
-                    <TextBlock Text="{Binding SelectedFileDetails}" TextWrapping="Wrap"/>
+
+                    <!-- Containing Folder with Copy Button -->
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <TextBlock Text="Containing Folder:" Width="120" VerticalAlignment="Center"/>
+                        <TextBlock Text="{Binding SelectedFile, Converter={x:Static converters:FileDirectoryConverter.Instance}}"
+                                   TextWrapping="NoWrap"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis"
+                                   MaxWidth="700"/>
+                        <Button Command="{Binding CopyDirectoryPathCommand}"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="4"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Copy directory path to clipboard">
+                            <PathIcon Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                      Width="16"
+                                      Height="16"/>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Size -->
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <TextBlock Text="Size:" Width="120"/>
+                        <TextBlock>
+                            <Run Text="{Binding SelectedFile.FilePath, Converter={x:Static converters:FileSizeConverter.Instance}}"/>
+                            <Run Text=" KB"/>
+                        </TextBlock>
+                    </StackPanel>
+
+                    <!-- Modified Date -->
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <TextBlock Text="Modified:" Width="120"/>
+                        <TextBlock Text="{Binding SelectedFile.FilePath, Converter={x:Static converters:FileModifiedConverter.Instance}}"/>
+                    </StackPanel>
+
+                    <!-- File Path (Clickable with Ctrl+Click) -->
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <TextBlock Text="Path:" Width="120" VerticalAlignment="Top"/>
+                        <TextBlock Text="{Binding SelectedFile.FilePath}"
+                                   TextWrapping="Wrap"
+                                   Foreground="#0066cc"
+                                   TextDecorations="Underline"
+                                   Cursor="Hand"
+                                   PointerPressed="FilePath_PointerPressed"
+                                   ToolTip.Tip="Ctrl+Click to open containing folder"
+                                   MaxWidth="700"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </Grid>
