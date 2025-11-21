@@ -478,7 +478,9 @@ public partial class MainWindowViewModel : ViewModelBase
             // Register custom tonie in metadata
             if (!string.IsNullOrEmpty(generatedHash))
             {
-                _customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, uidInput);
+                // Get the actual audio ID used (either custom or file creation timestamp)
+                uint actualAudioId = customAudioId ?? (uint)((DateTimeOffset)new FileInfo(targetFile).CreationTimeUtc).ToUnixTimeSeconds();
+                _customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, uidInput, actualAudioId, sortedAudioPaths);
             }
 
             // Refresh the directory to show the new Tonie
@@ -1072,8 +1074,15 @@ public partial class MainWindowViewModel : ViewModelBase
             // Construct the full new title with RFID (if it existed)
             string fullNewTitle = newTitle + (rfidPart ?? "");
 
-            // Update in customTonies.json
-            _metadataService.UpdateCustomTonie(hash, fullNewTitle);
+            // Get existing metadata to preserve other fields
+            var existingMetadata = _metadataService.GetCustomTonieMetadata(hash);
+            if (existingMetadata != null)
+            {
+                // Update only the title, preserving all other fields
+                existingMetadata.Title = fullNewTitle;
+                existingMetadata.Episodes = fullNewTitle; // Also update episodes to match
+                _metadataService.UpdateCustomTonie(hash, existingMetadata);
+            }
 
             // Update the DisplayName in the UI
             bool isLive = file.IsLive;
@@ -1084,6 +1093,192 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception ex)
         {
             StatusText = $"Error renaming tonie: {ex.Message}";
+        }
+        finally
+        {
+            _isRenameDialogOpen = false;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private async Task EditMetadata(TonieFileItem? file)
+    {
+        if (file == null)
+        {
+            StatusText = "Please select a file first";
+            return;
+        }
+
+        // Only allow editing metadata for custom tonies
+        if (!file.IsCustomTonie)
+        {
+            StatusText = "Only custom tonies can have their metadata edited.";
+            return;
+        }
+
+        if (_isRenameDialogOpen)
+            return;
+
+        try
+        {
+            _isRenameDialogOpen = true;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
+
+            // Get the hash first
+            string? hash = null;
+            try
+            {
+                var audio = TonieAudio.FromFile(file.FilePath, false);
+                hash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"Error reading file: {ex.Message}";
+                return;
+            }
+
+            if (string.IsNullOrEmpty(hash))
+            {
+                StatusText = "Error: Could not read file hash";
+                return;
+            }
+
+            // Get the existing metadata
+            var existingMetadata = _metadataService.GetCustomTonieMetadata(hash);
+            if (existingMetadata == null)
+            {
+                StatusText = "Error: Could not find metadata for this custom tonie";
+                return;
+            }
+
+            // Show edit metadata dialog
+            var editDialog = new EditMetadataDialog(existingMetadata);
+            var result = await editDialog.ShowDialog<bool?>(_window);
+
+            if (result != true)
+            {
+                StatusText = "Metadata edit cancelled";
+                return;
+            }
+
+            var updatedMetadata = editDialog.GetUpdatedMetadata();
+            if (updatedMetadata == null)
+            {
+                StatusText = "Error: Could not get updated metadata";
+                return;
+            }
+
+            // Update in customTonies.json
+            _metadataService.UpdateCustomTonie(hash, updatedMetadata);
+
+            // Update the DisplayName in the UI
+            bool isLive = file.IsLive;
+            string newDisplayName = !string.IsNullOrEmpty(updatedMetadata.Title)
+                ? updatedMetadata.Title
+                : updatedMetadata.Series;
+            file.DisplayName = isLive ? $"[LIVE] {newDisplayName}" : newDisplayName;
+
+            StatusText = $"Successfully updated metadata for '{newDisplayName}'";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error editing metadata: {ex.Message}";
+        }
+        finally
+        {
+            _isRenameDialogOpen = false;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
+        }
+
+        await Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    private async Task BulkEditMetadata()
+    {
+        // Get selected items
+        var selectedFiles = SelectedItems?.Cast<TonieFileItem>().ToList();
+        if (selectedFiles == null || selectedFiles.Count == 0)
+        {
+            StatusText = "Please select at least one custom tonie";
+            return;
+        }
+
+        // Filter to only custom tonies
+        var customTonies = selectedFiles.Where(f => f.IsCustomTonie).ToList();
+        if (customTonies.Count == 0)
+        {
+            StatusText = "No custom tonies selected. Only custom tonies can have their metadata edited.";
+            return;
+        }
+
+        if (_isRenameDialogOpen)
+            return;
+
+        try
+        {
+            _isRenameDialogOpen = true;
+            OnPropertyChanged(nameof(IsAnyDialogOpen));
+            OnPropertyChanged(nameof(IsNoDialogOpen));
+
+            // Show bulk edit dialog
+            var bulkEditDialog = new BulkEditMetadataDialog(customTonies.Count);
+            var result = await bulkEditDialog.ShowDialog<bool?>(_window);
+
+            if (result != true)
+            {
+                StatusText = "Bulk edit cancelled";
+                return;
+            }
+
+            var (series, category, language) = bulkEditDialog.GetUpdatedFields();
+
+            // Check if any fields were provided
+            if (string.IsNullOrWhiteSpace(series) &&
+                string.IsNullOrWhiteSpace(category) &&
+                string.IsNullOrWhiteSpace(language))
+            {
+                StatusText = "No fields to update";
+                return;
+            }
+
+            // Get hashes for all custom tonies
+            var hashes = new List<string>();
+            foreach (var file in customTonies)
+            {
+                try
+                {
+                    var audio = TonieAudio.FromFile(file.FilePath, false);
+                    var hash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
+                    hashes.Add(hash);
+                }
+                catch
+                {
+                    // Skip files that can't be read
+                    continue;
+                }
+            }
+
+            if (hashes.Count == 0)
+            {
+                StatusText = "Error: Could not read any of the selected files";
+                return;
+            }
+
+            // Perform bulk update
+            int updatedCount = _metadataService.BulkUpdateCustomTonies(hashes, series, category, language);
+
+            StatusText = $"Successfully updated {updatedCount} custom tonie(s)";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error during bulk edit: {ex.Message}";
         }
         finally
         {
@@ -1446,7 +1641,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
                     // Create new name with updated RFID
                     string newCustomName = $"{titlePart} [RFID: {newUidInput}]";
-                    _metadataService.UpdateCustomTonie(hash, newCustomName);
+
+                    // Get existing metadata to preserve other fields
+                    var existingMetadata = _metadataService.GetCustomTonieMetadata(hash);
+                    if (existingMetadata != null)
+                    {
+                        // Update only the title, preserving all other fields
+                        existingMetadata.Title = newCustomName;
+                        existingMetadata.Episodes = newCustomName; // Also update episodes to match
+                        _metadataService.UpdateCustomTonie(hash, existingMetadata);
+                    }
                 }
             }
 

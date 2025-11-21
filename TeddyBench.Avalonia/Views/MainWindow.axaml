@@ -201,6 +201,10 @@
                                                       Command="{Binding $parent[Window].DataContext.RenameSelectedTonieCommand}"
                                                       CommandParameter="{Binding}"
                                                       IsVisible="{Binding IsCustomTonie}"/>
+                                            <MenuItem Header="Edit Metadata"
+                                                      Command="{Binding $parent[Window].DataContext.EditMetadataCommand}"
+                                                      CommandParameter="{Binding}"
+                                                      IsVisible="{Binding IsCustomTonie}"/>
                                             <MenuItem Header="Assign new UID"
                                                       Command="{Binding $parent[Window].DataContext.AssignNewUidCommand}"
                                                       CommandParameter="{Binding}"/>

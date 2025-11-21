@@ -52,6 +52,10 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Display detailed file information
   - Delete Tonies with confirmation dialog
   - Re-assign UID to existing Tonies
+  - **Enhanced File Details Display** in Selected File Details panel
+    - File size with human-readable formatting (KB/MB/GB)
+    - Last modified date and time
+    - Directory location information
 
 ### Platform Support
 - **Windows**: Full support for CLI and GUI (including legacy TeddyBench)
@@ -71,8 +75,11 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
 
 ### Bug Fixes
 - **Fixed hash validation error** when clicking "Show Info" on Tonie files
+- **Fixed extended Info display** - improved layout and formatting of detailed file information
 - **Fixed sorting dropdown alignment** - now properly right-aligned in UI
 - **Fixed audio-id generation bug** that could cause duplicate IDs across different custom Tonies
+  - Improved audio ID generation algorithm to ensure uniqueness
+  - Added comprehensive test suite to verify audio ID and hash generation specifications
 - **Fixed space bar audio playback** issue where pressing and holding space caused buggy behavior
 - **Fixed modified Tonie playback** to ensure proper re-encoding for compatibility
 - **Fixed encoding progress dialog** now properly displays during Tonie modification workflow

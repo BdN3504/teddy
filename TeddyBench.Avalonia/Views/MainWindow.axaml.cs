@@ -220,6 +220,25 @@ public partial class MainWindow : Window
                         await viewModel.RemoveMultipleLiveFlagsCommand.ExecuteAsync(null);
                     };
 
+                    // Check if any of the selected items are custom tonies
+                    int customTonieCount = selectedItemsCopy.Count(item => item.IsCustomTonie);
+
+                    if (customTonieCount > 0)
+                    {
+                        var bulkEditMenuItem = new MenuItem
+                        {
+                            Header = $"Bulk Edit Metadata ({customTonieCount} custom tonies)"
+                        };
+                        bulkEditMenuItem.Click += async (s, args) =>
+                        {
+                            // Use the captured selection
+                            viewModel.SelectedItems = new System.Collections.ArrayList(selectedItemsCopy);
+                            await viewModel.BulkEditMetadataCommand.ExecuteAsync(null);
+                        };
+                        multiContextMenu.Items.Add(bulkEditMenuItem);
+                        multiContextMenu.Items.Add(new Separator());
+                    }
+
                     multiContextMenu.Items.Add(removeLiveFlagMenuItem);
                     multiContextMenu.Items.Add(deleteMenuItem);
 

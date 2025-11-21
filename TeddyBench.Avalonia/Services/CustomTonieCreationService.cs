@@ -1,6 +1,7 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.RegularExpressions;
 
 namespace TeddyBench.Avalonia.Services;
@@ -97,9 +98,13 @@ public class CustomTonieCreationService
     /// <summary>
     /// Registers a custom Tonie in the metadata database.
     /// </summary>
-    public void RegisterCustomTonie(string hash, string sourceFolderName, string originalUid)
+    public void RegisterCustomTonie(string hash, string sourceFolderName, string originalUid, uint audioId, string[] trackPaths)
     {
         string customTitle = $"{sourceFolderName} [RFID: {originalUid}]";
-        _metadataService.AddCustomTonie(hash, customTitle);
+
+        // Extract track names from file paths
+        var tracks = trackPaths.Select(path => System.IO.Path.GetFileNameWithoutExtension(path)).ToList();
+
+        _metadataService.AddCustomTonie(hash, customTitle, audioId, tracks);
     }
 }
