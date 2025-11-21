@@ -296,6 +296,18 @@
                                    ToolTip.Tip="Ctrl+Click to open containing folder"
                                    MaxWidth="700"/>
                     </StackPanel>
+
+                    <!-- Separator line before detailed info -->
+                    <Border Height="1"
+                            Background="#CCCCCC"
+                            Margin="0,10,10,10"
+                            IsVisible="{Binding SelectedFileDetails, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+
+                    <!-- Detailed Tonie Info (shown only after clicking "Show Info") -->
+                    <TextBlock Text="{Binding SelectedFileDetails}"
+                               TextWrapping="Wrap"
+                               FontFamily="Consolas,Courier New,monospace"
+                               IsVisible="{Binding SelectedFileDetails, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
                 </StackPanel>
             </Border>
         </Grid>

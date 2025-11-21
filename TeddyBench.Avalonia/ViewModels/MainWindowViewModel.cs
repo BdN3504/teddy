@@ -225,10 +225,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     partial void OnSelectedFileChanged(TonieFileItem? value)
     {
-        if (value != null)
-        {
-            UpdateSelectedFileDetails(value);
-        }
+        // Clear detailed info when selecting a new file
+        // User must click "Show Info" to see detailed Tonie information
+        SelectedFileDetails = string.Empty;
 
         OnPropertyChanged(nameof(HasSelectedFile));
     }
@@ -569,9 +568,12 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             var audio = TonieAudio.FromFile(SelectedFile.FilePath, true);
 
-            SelectedFileDetails = $"Containing Folder: {SelectedFile.DirectoryName}\n" +
-                                $"Audio ID: 0x{audio.Header.AudioId:X8}\n" +
-                                $"Audio Length: {audio.Header.AudioLength} bytes\n" +
+            // Calculate total audio duration from highest granule position
+            audio.CalculateStatistics(out _, out _, out _, out _, out _, out _, out ulong highestGranule);
+            string audioDuration = FormatDuration(highestGranule);
+
+            SelectedFileDetails = $"Audio ID: 0x{audio.Header.AudioId:X8}\n" +
+                                $"Audio Length: {audioDuration}\n" +
                                 $"Chapters: {audio.Header.AudioChapters.Length}\n" +
                                 $"Hash: {BitConverter.ToString(audio.Header.Hash).Replace("-", "")}\n" +
                                 $"Hash Valid: {audio.HashCorrect}";
@@ -654,6 +656,28 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(HasSelectedFile));
         OnPropertyChanged(nameof(HasMultipleSelection));
+    }
+
+    /// <summary>
+    /// Formats a granule position (at 48000 Hz) as hh:mm:ss or mm:ss
+    /// </summary>
+    private string FormatDuration(ulong granule)
+    {
+        // Granules are at 48000 Hz (48000 granules per second)
+        double totalSeconds = granule / 48000.0;
+
+        int hours = (int)(totalSeconds / 3600);
+        int minutes = (int)((totalSeconds % 3600) / 60);
+        int seconds = (int)(totalSeconds % 60);
+
+        if (hours > 0)
+        {
+            return $"{hours}:{minutes:D2}:{seconds:D2}";
+        }
+        else
+        {
+            return $"{minutes}:{seconds:D2}";
+        }
     }
 
     [RelayCommand]
@@ -867,9 +891,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
             var audio = TonieAudio.FromFile(file.FilePath, true);
 
-            SelectedFileDetails = $"Containing Folder: {file.DirectoryName}\n" +
-                                $"Audio ID: 0x{audio.Header.AudioId:X8}\n" +
-                                $"Audio Length: {audio.Header.AudioLength} bytes\n" +
+            // Calculate total audio duration from highest granule position
+            audio.CalculateStatistics(out _, out _, out _, out _, out _, out _, out ulong highestGranule);
+            string audioDuration = FormatDuration(highestGranule);
+
+            SelectedFileDetails = $"Audio ID: 0x{audio.Header.AudioId:X8}\n" +
+                                $"Audio Length: {audioDuration}\n" +
                                 $"Chapters: {audio.Header.AudioChapters.Length}\n" +
                                 $"Hash: {BitConverter.ToString(audio.Header.Hash).Replace("-", "")}\n" +
                                 $"Hash Valid: {audio.HashCorrect}";
@@ -1219,21 +1246,6 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private void UpdateSelectedFileDetails(TonieFileItem file)
-    {
-        try
-        {
-            var fileInfo = new FileInfo(file.FilePath);
-            SelectedFileDetails = $"Containing Folder: {file.DirectoryName}\n" +
-                                $"Size: {fileInfo.Length / 1024} KB\n" +
-                                $"Modified: {fileInfo.LastWriteTime}\n" +
-                                $"Path: {file.FilePath}";
-        }
-        catch (Exception ex)
-        {
-            SelectedFileDetails = $"Error: {ex.Message}";
-        }
-    }
 
     private async Task DownloadImageForTonieAsync(string hash, string picUrl, string filePath)
     {
