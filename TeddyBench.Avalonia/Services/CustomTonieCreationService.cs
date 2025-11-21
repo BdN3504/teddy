@@ -38,46 +38,26 @@ public class CustomTonieCreationService
         return (true, string.Empty);
     }
 
-    /// <summary>
-    /// Parses an RFID UID and extracts the audio ID.
-    /// </summary>
-    /// <returns>The reversed UID and parsed audio ID, or null if parsing failed.</returns>
-    public (string ReversedUid, uint AudioId)? ParseRfidUid(string uidInput)
-    {
-        // Reverse byte order
-        string reversedUid = _tonieFileService.ReverseUidBytes(uidInput);
-
-        // Parse as audio ID (last 4 bytes = last 8 hex chars of full RFID)
-        string fullRfidWithSuffix = reversedUid + "500304E0";
-        if (uint.TryParse(fullRfidWithSuffix.Substring(8, 8), NumberStyles.HexNumber, null, out uint audioId))
-        {
-            return (reversedUid, audioId);
-        }
-
-        return null;
-    }
 
     /// <summary>
     /// Creates a custom Tonie file and saves it to the specified directory.
+    /// If audioId is null, the Audio ID is automatically set to the Unix timestamp of file creation.
     /// </summary>
     /// <param name="targetDirectory">Base directory (typically CONTENT folder)</param>
     /// <param name="reversedUid">The reversed RFID UID for the directory name</param>
-    /// <param name="audioId">The parsed audio ID</param>
     /// <param name="sortedAudioPaths">Sorted audio file paths</param>
     /// <param name="originalUid">The original UID for metadata (user-entered format)</param>
+    /// <param name="audioId">Optional audio ID. If null, uses Unix timestamp of file creation.</param>
     /// <param name="callback">Optional callback for progress reporting</param>
     /// <returns>The generated hash and target file path</returns>
     public (string Hash, string FilePath) CreateCustomTonieFile(
         string targetDirectory,
         string reversedUid,
-        uint audioId,
         string[] sortedAudioPaths,
         string originalUid,
+        uint? audioId = null,
         TonieFile.TonieAudio.EncodeCallback? callback = null)
     {
-        // Encode the audio files
-        var (fileContent, hash) = _tonieFileService.EncodeCustomTonie(sortedAudioPaths, audioId, 96, callback);
-
         // Create directory structure
         // Directory: reversedUid (e.g., "0451ED0E"), File: "500304E0" (constant suffix)
         string dirName = reversedUid;
@@ -87,6 +67,28 @@ public class CustomTonieCreationService
         Directory.CreateDirectory(targetDir);
 
         string targetFile = Path.Combine(targetDir, fileName);
+
+        // Determine the Audio ID
+        uint finalAudioId;
+        if (audioId.HasValue)
+        {
+            // Use the provided Audio ID
+            finalAudioId = audioId.Value;
+        }
+        else
+        {
+            // Touch the file first to establish creation timestamp
+            File.WriteAllBytes(targetFile, Array.Empty<byte>());
+
+            // Get the file creation time as Unix timestamp for Audio ID
+            var fileInfo = new FileInfo(targetFile);
+            finalAudioId = (uint)((DateTimeOffset)fileInfo.CreationTimeUtc).ToUnixTimeSeconds();
+        }
+
+        // Encode the audio files with the determined Audio ID
+        var (fileContent, hash) = _tonieFileService.EncodeCustomTonie(sortedAudioPaths, finalAudioId, 96, callback);
+
+        // Write the final encoded content
         File.WriteAllBytes(targetFile, fileContent);
 
         return (hash, targetFile);

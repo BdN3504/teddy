@@ -379,16 +379,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 return;
             }
 
-            // Parse RFID UID and extract audio ID
-            var parseResult = _customTonieService.ParseRfidUid(uidInput);
-            if (!parseResult.HasValue)
-            {
-                StatusText = "Error: Invalid RFID UID format";
-                return;
-            }
-
-            string reversedUid = parseResult.Value.ReversedUid;
-            uint audioId = customAudioId ?? parseResult.Value.AudioId; // Use custom Audio ID if provided, otherwise use generated one
+            // Reverse the RFID UID for directory naming
+            string reversedUid = _tonieFileService.ReverseUidBytes(uidInput);
 
             // Select audio files
             var storageProvider = _window.StorageProvider;
@@ -466,12 +458,13 @@ public partial class MainWindowViewModel : ViewModelBase
             var encodingTask = Task.Run(() =>
             {
                 // Create custom Tonie file using the service with progress callback
+                // Audio ID will be automatically set to file creation timestamp (or use customAudioId if provided)
                 (generatedHash, targetFile) = _customTonieService.CreateCustomTonieFile(
                     CurrentDirectory,
                     reversedUid,
-                    audioId,
                     sortedAudioPaths,
                     uidInput,
+                    customAudioId,
                     encodeCallback);
 
                 // Notify completion

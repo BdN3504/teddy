@@ -69,16 +69,12 @@ public class AssignNewUidTests : IDisposable
             new TonieMetadataService()
         );
 
-        var parseResult = customTonieService.ParseRfidUid(initialUid);
-        Assert.True(parseResult.HasValue, "Initial RFID UID should be valid");
-
-        var reversedUid = parseResult.Value.ReversedUid;
-        var audioId = parseResult.Value.AudioId;
+        var tonieFileService = new TonieFileService();
+        var reversedUid = tonieFileService.ReverseUidBytes(initialUid);
 
         var (generatedHash, targetFile) = customTonieService.CreateCustomTonieFile(
             _contentDir,
             reversedUid,
-            audioId,
             new[] { track1Path, track2Path },
             initialUid
         );
@@ -96,7 +92,6 @@ public class AssignNewUidTests : IDisposable
         Console.WriteLine($"Initial title: {initialTitle}");
 
         // Act - Simulate AssignNewUid operation
-        var tonieFileService = new TonieFileService();
         var metadataService = new TonieMetadataService();
 
         // Read the file to get hash
@@ -129,10 +124,7 @@ public class AssignNewUidTests : IDisposable
         metadataService.UpdateCustomTonie(hash, newCustomName);
 
         // Move the file to new directory (simulate the full AssignNewUid operation)
-        var newParseResult = customTonieService.ParseRfidUid(newUid);
-        Assert.True(newParseResult.HasValue, "New RFID UID should be valid");
-
-        var newReversedUid = newParseResult.Value.ReversedUid;
+        var newReversedUid = tonieFileService.ReverseUidBytes(newUid);
         var newDirPath = Path.Combine(_contentDir, newReversedUid);
         var newFilePath = Path.Combine(newDirPath, "500304E0");
 
@@ -186,15 +178,12 @@ public class AssignNewUidTests : IDisposable
             new TonieMetadataService()
         );
 
-        var parseResult = customTonieService.ParseRfidUid(initialUid);
-        Assert.True(parseResult.HasValue, "RFID UID should be valid");
-        var reversedUid = parseResult.Value.ReversedUid;
-        var audioId = parseResult.Value.AudioId;
+        var tonieFileService = new TonieFileService();
+        var reversedUid = tonieFileService.ReverseUidBytes(initialUid);
 
         var (generatedHash, targetFile) = customTonieService.CreateCustomTonieFile(
             _contentDir,
             reversedUid,
-            audioId,
             new[] { track1Path, track2Path },
             initialUid
         );
@@ -242,15 +231,12 @@ public class AssignNewUidTests : IDisposable
             new TonieMetadataService()
         );
 
-        var parseResult = customTonieService.ParseRfidUid(initialUid);
-        Assert.True(parseResult.HasValue, "RFID UID should be valid");
-        var reversedUid = parseResult.Value.ReversedUid;
-        var audioId = parseResult.Value.AudioId;
+        var tonieFileService = new TonieFileService();
+        var reversedUid = tonieFileService.ReverseUidBytes(initialUid);
 
         var (generatedHash, targetFile) = customTonieService.CreateCustomTonieFile(
             _contentDir,
             reversedUid,
-            audioId,
             new[] { track1Path },
             initialUid
         );

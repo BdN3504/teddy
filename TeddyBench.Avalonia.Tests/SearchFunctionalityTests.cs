@@ -345,21 +345,18 @@ public class SearchFunctionalityTests : IDisposable
             new TonieMetadataService()
         );
 
-        var parseResult = customTonieService.ParseRfidUid(rfidUid);
-        Assert.True(parseResult.HasValue, "RFID UID should be valid");
+        var tonieFileService = new TonieFileService();
+        var reversedUid = tonieFileService.ReverseUidBytes(rfidUid);
 
-        var reversedUid = parseResult.Value.ReversedUid;
-        var audioId = customAudioId ?? parseResult.Value.AudioId; // Use custom audio ID if provided
-
-        Console.WriteLine($"[SEARCH TEST] Reversed UID: {reversedUid}, Audio ID: 0x{audioId:X8}");
+        Console.WriteLine($"[SEARCH TEST] Reversed UID: {reversedUid}, Audio ID: {(customAudioId.HasValue ? $"0x{customAudioId.Value:X8} (custom)" : "auto-generated from timestamp")}");
 
         // Create the tonie file
         var (generatedHash, targetFile) = customTonieService.CreateCustomTonieFile(
             _contentDir,
             reversedUid,
-            audioId,
             new[] { audioPath },
-            rfidUid
+            rfidUid,
+            customAudioId
         );
 
         Console.WriteLine($"[SEARCH TEST] Tonie file created at: {targetFile}");

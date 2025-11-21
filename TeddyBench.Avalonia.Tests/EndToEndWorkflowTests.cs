@@ -279,17 +279,13 @@ public class EndToEndWorkflowTests : IDisposable
             new TonieMetadataService()
         );
 
-        var parseResult = customTonieService.ParseRfidUid(rfidUid);
-        Assert.True(parseResult.HasValue, "RFID UID should be valid");
-
-        var reversedUid = parseResult.Value.ReversedUid;
-        var audioId = parseResult.Value.AudioId;
+        var tonieFileService = new TonieFileService();
+        var reversedUid = tonieFileService.ReverseUidBytes(rfidUid);
 
         // Create the tonie file
         var (generatedHash, targetFile) = customTonieService.CreateCustomTonieFile(
             _contentDir,
             reversedUid,
-            audioId,
             audioPaths,
             rfidUid
         );
