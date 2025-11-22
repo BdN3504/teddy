@@ -52,9 +52,10 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - View all quarantined files with metadata (UID, hash, deletion date, duration)
   - Restore deleted Tonies back to CONTENT folder with original directory structure
   - Permanently delete files from TRASHCAN
-  - Byte-for-byte restoration: restored files are identical to originals (preserves Audio ID)
-  - Advanced customTonies.json format: stores Directory field for reliable restoration
-  - RFID prompt for unknown Tonies during restoration
+  - **Byte-for-byte restoration**: restored files are **100% identical** to originals (preserves Audio ID)
+  - **Advanced customTonies.json format**: now stores Directory field for reliable restoration without RFID parsing ambiguity
+  - **Conflict resolution**: detects and handles conflicts when restoring to occupied directory
+  - **UID prompt**: interactive dialog for unknown Tonies during restoration
   - Accessible via "TRASHCAN Recovery" toolbar button
 
 - **File Operations**
@@ -82,6 +83,11 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
 - Platform-specific LibVLC bundling (Windows/macOS bundled, Linux system-installed)
 - Optimized release binaries without debug symbols
 - .NET 8.0 compatibility (replaced deprecated APIs)
+- **BREAKING CHANGE**: customTonies.json format changed from JObject (dictionary) to JArray (array of objects)
+  - Added "Directory" field to TonieMetadata model for reliable TRASHCAN restoration
+  - Backward compatibility maintained via RFID regex fallback for old entries
+  - New format: `[{"No": "0", "Hash": "...", "Title": "...", "Directory": "EA33ED0E", "AudioId": [...], "Tracks": [...]}]`
+- **TonieAudio.UpdateFileContent()**: New method to update file content when header is modified (enables Audio ID restoration)
 
 ### Bug Fixes
 - **Fixed critical bug: Audio ID was incorrectly affecting file hash** ⚠️ IMPORTANT
@@ -99,6 +105,10 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
 - **Fixed space bar audio playback** issue where pressing and holding space caused buggy behavior
 - **Fixed modified Tonie playback** to ensure proper re-encoding for compatibility
 - **Fixed encoding progress dialog** now properly displays during Tonie modification workflow
+- **Fixed TRASHCAN restoration to preserve original Audio ID**
+  - Restored Tonies now have identical Audio ID to the original file
+  - Added comprehensive test suite to verify byte-for-byte restoration (TrashcanRestorationTests.cs)
+  - Updated all test fixtures to work with new JArray-based customTonies.json format
 - Replaced deprecated `Thread.Abort()` for .NET 8.0 compatibility
 - Replaced deprecated `WebRequest` with `HttpClient` to eliminate SYSLIB0014 warnings
 

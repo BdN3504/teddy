@@ -167,8 +167,9 @@ namespace TeddyBench.Avalonia.Services
         /// </summary>
         /// <param name="deletedTonie">The deleted Tonie to restore</param>
         /// <param name="sdCardPath">Path to the SD card root</param>
+        /// <param name="allowOverwrite">If true, overwrites existing file at target location</param>
         /// <returns>True if restore was successful</returns>
-        public async Task<(bool success, string message)> RestoreTonieAsync(DeletedTonieItem deletedTonie, string sdCardPath)
+        public async Task<(bool success, string message)> RestoreTonieAsync(DeletedTonieItem deletedTonie, string sdCardPath, bool allowOverwrite = false)
         {
             try
             {
@@ -180,9 +181,9 @@ namespace TeddyBench.Avalonia.Services
                 var targetFilePath = Path.Combine(contentPath, "500304E0");
 
                 // Check if target already exists
-                if (File.Exists(targetFilePath))
+                if (File.Exists(targetFilePath) && !allowOverwrite)
                 {
-                    return (false, $"Target file already exists: {reversedUid}/500304E0");
+                    return (false, $"CONFLICT:{reversedUid}");
                 }
 
                 // Create directory if it doesn't exist
@@ -192,7 +193,8 @@ namespace TeddyBench.Avalonia.Services
                 }
 
                 // Copy the file (don't delete from TRASHCAN yet, safer to keep backup)
-                await Task.Run(() => File.Copy(deletedTonie.FilePath, targetFilePath, false));
+                // Use overwrite parameter to control behavior
+                await Task.Run(() => File.Copy(deletedTonie.FilePath, targetFilePath, allowOverwrite));
 
                 // Restore original Audio ID if it's a custom tonie
                 if (deletedTonie.IsCustomTonie)

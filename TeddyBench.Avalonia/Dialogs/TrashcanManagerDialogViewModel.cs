@@ -112,12 +112,23 @@ public partial class TrashcanManagerDialogViewModel : ObservableObject
             StatusText = $"Using RFID UID: {enteredUid}";
         }
 
+        // Attempt restore - will handle conflicts
+        await AttemptRestoreAsync(false);
+    }
+
+    private async Task AttemptRestoreAsync(bool allowOverwrite)
+    {
+        if (SelectedTonie == null)
+        {
+            return;
+        }
+
         IsLoading = true;
         StatusText = $"Restoring {SelectedTonie.DisplayName}...";
 
         try
         {
-            var (success, message) = await _trashcanService.RestoreTonieAsync(SelectedTonie, _sdCardPath);
+            var (success, message) = await _trashcanService.RestoreTonieAsync(SelectedTonie, _sdCardPath, allowOverwrite);
 
             if (success)
             {
@@ -132,7 +143,16 @@ public partial class TrashcanManagerDialogViewModel : ObservableObject
             }
             else
             {
-                StatusText = $"Failed to restore: {message}";
+                // Check if it's a conflict
+                if (message.StartsWith("CONFLICT:"))
+                {
+                    var existingUid = message.Substring("CONFLICT:".Length);
+                    await HandleConflictAsync(existingUid);
+                }
+                else
+                {
+                    StatusText = $"Failed to restore: {message}";
+                }
             }
         }
         catch (Exception ex)
@@ -142,6 +162,67 @@ public partial class TrashcanManagerDialogViewModel : ObservableObject
         finally
         {
             IsLoading = false;
+        }
+    }
+
+    private async Task HandleConflictAsync(string existingUid)
+    {
+        if (SelectedTonie == null)
+        {
+            return;
+        }
+
+        // Show conflict resolution dialog
+        var conflictDialog = new ConflictResolutionDialog(SelectedTonie.DisplayName, existingUid);
+        var result = await conflictDialog.ShowDialog<ConflictResolutionResult>(_window);
+
+        switch (result)
+        {
+            case ConflictResolutionResult.Overwrite:
+                // User chose to overwrite - retry with overwrite flag
+                StatusText = $"Overwriting existing Tonie at {existingUid}/500304E0...";
+                await AttemptRestoreAsync(true);
+                break;
+
+            case ConflictResolutionResult.NewUid:
+                // User chose to enter a new UID
+                StatusText = "Please enter a different RFID UID...";
+
+                // Get CONTENT directory path for validation
+                var contentPath = System.IO.Path.Combine(_sdCardPath, "CONTENT");
+
+                // Show RFID input dialog with empty prefix (user will enter full 8 characters)
+                var rfidDialog = new RfidInputDialog("", contentPath);
+                var rfidResult = await rfidDialog.ShowDialog<bool?>(_window);
+
+                if (rfidResult == true)
+                {
+                    // Get the entered UID
+                    var enteredUid = rfidDialog.GetRfidUid();
+                    if (!string.IsNullOrEmpty(enteredUid))
+                    {
+                        // Update the UID in the selected tonie
+                        SelectedTonie.Uid = enteredUid;
+                        StatusText = $"Using new RFID UID: {enteredUid}";
+
+                        // Retry restore with new UID
+                        await AttemptRestoreAsync(false);
+                    }
+                    else
+                    {
+                        StatusText = "Restore cancelled - no UID entered";
+                    }
+                }
+                else
+                {
+                    StatusText = "Restore cancelled";
+                }
+                break;
+
+            case ConflictResolutionResult.Cancel:
+            default:
+                StatusText = "Restore cancelled";
+                break;
         }
     }
 

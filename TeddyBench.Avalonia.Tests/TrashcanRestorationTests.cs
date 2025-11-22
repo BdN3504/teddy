@@ -228,6 +228,228 @@ public class TrashcanRestorationTests : IDisposable
         Console.WriteLine("✓ Restored file is byte-for-byte identical to original");
     }
 
+    [AvaloniaFact]
+    public async Task TrashcanRestore_ConflictDetection_ShouldReturnConflictMessage()
+    {
+        Console.WriteLine("=== TRASHCAN Restore Conflict Detection Test ===");
+        Console.WriteLine();
+
+        // Step 1: Create a tonie in CONTENT
+        Console.WriteLine("Step 1: Creating existing tonie in CONTENT...");
+        var rfidUid = "0EED44BB";
+        var reversedUid = ReverseByteOrder(rfidUid); // BB44ED0E
+        var existingDir = Path.Combine(_contentDir, reversedUid);
+        Directory.CreateDirectory(existingDir);
+        var existingFilePath = Path.Combine(existingDir, "500304E0");
+
+        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track1.mp3");
+        Assert.True(File.Exists(track1Path), $"Test file not found: {track1Path}");
+
+        var existingTonie = new TonieAudio(
+            sources: new[] { track1Path },
+            audioId: 0x12345678,
+            bitRate: 96000,
+            useVbr: false,
+            prefixLocation: null
+        );
+
+        File.WriteAllBytes(existingFilePath, existingTonie.FileContent);
+        Console.WriteLine($"  ✓ Created existing tonie at: {reversedUid}/500304E0");
+
+        // Step 2: Create a file in TRASHCAN with same UID
+        Console.WriteLine();
+        Console.WriteLine("Step 2: Creating deleted tonie in TRASHCAN with same UID...");
+
+        var trashcanSubDir = Path.Combine(_trashcanDir, "7F0");
+        Directory.CreateDirectory(trashcanSubDir);
+        var deletionTimestamp = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var trashcanFilePath = Path.Combine(trashcanSubDir, $"{deletionTimestamp:X8}.043");
+
+        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track2.mp3");
+        Assert.True(File.Exists(track2Path), $"Test file not found: {track2Path}");
+
+        var deletedTonie = new TonieAudio(
+            sources: new[] { track2Path },
+            audioId: deletionTimestamp,
+            bitRate: 96000,
+            useVbr: false,
+            prefixLocation: null
+        );
+
+        File.WriteAllBytes(trashcanFilePath, deletedTonie.FileContent);
+        Console.WriteLine($"  ✓ Created deleted tonie at: TRASHCAN/7F0/{deletionTimestamp:X8}.043");
+
+        // Step 3: Store metadata in customTonies.json
+        Console.WriteLine();
+        Console.WriteLine("Step 3: Storing metadata in customTonies.json...");
+        var contentHash = BitConverter.ToString(deletedTonie.Header.Hash).Replace("-", "");
+        var customTonies = new JArray
+        {
+            new JObject
+            {
+                ["no"] = "0",
+                ["hash"] = new JArray { contentHash },
+                ["title"] = $"Deleted Album [RFID: {rfidUid}]",
+                ["directory"] = reversedUid,
+                ["audio_id"] = new JArray { "ABCDEF00" },
+                ["tracks"] = new JArray { "Track 1" }
+            }
+        };
+        File.WriteAllText(_customTonieJsonPath, customTonies.ToString(Formatting.Indented));
+        Console.WriteLine($"  ✓ Metadata stored");
+
+        // Step 4: Scan TRASHCAN
+        Console.WriteLine();
+        Console.WriteLine("Step 4: Scanning TRASHCAN...");
+        var metadataService = new TonieMetadataService();
+        var trashcanService = new TrashcanService(metadataService);
+
+        var deletedTonies = await trashcanService.ScanTrashcanAsync(_testDir);
+        Assert.Single(deletedTonies);
+        var scannedTonie = deletedTonies.First();
+        Console.WriteLine($"  ✓ Found 1 deleted tonie with UID: {scannedTonie.Uid}");
+
+        // Step 5: Attempt restore without overwrite flag - should detect conflict
+        Console.WriteLine();
+        Console.WriteLine("Step 5: Attempting restore without overwrite (should fail)...");
+        var (success, message) = await trashcanService.RestoreTonieAsync(scannedTonie, _testDir, allowOverwrite: false);
+
+        Assert.False(success, "Restore should fail due to conflict");
+        Assert.StartsWith("CONFLICT:", message);
+        Console.WriteLine($"  ✓ Conflict detected: {message}");
+
+        // Verify original file was not overwritten
+        var originalContent = File.ReadAllBytes(existingFilePath);
+        var verifyTonie = TonieAudio.FromFile(existingFilePath, readAudio: false);
+        Assert.Equal(0x12345678u, verifyTonie.Header.AudioId);
+        Console.WriteLine($"  ✓ Original file preserved (Audio ID: 0x{verifyTonie.Header.AudioId:X8})");
+
+        Console.WriteLine();
+        Console.WriteLine("=== TEST PASSED ===");
+        Console.WriteLine("✓ Conflict detection working correctly");
+        Console.WriteLine("✓ Original file not overwritten");
+    }
+
+    [AvaloniaFact]
+    public async Task TrashcanRestore_ConflictOverwrite_ShouldReplaceExistingFile()
+    {
+        Console.WriteLine("=== TRASHCAN Restore Conflict Overwrite Test ===");
+        Console.WriteLine();
+
+        // Step 1: Create a tonie in CONTENT
+        Console.WriteLine("Step 1: Creating existing tonie in CONTENT...");
+        var rfidUid = "0EED55CC";
+        var reversedUid = ReverseByteOrder(rfidUid); // CC55ED0E
+        var existingDir = Path.Combine(_contentDir, reversedUid);
+        Directory.CreateDirectory(existingDir);
+        var existingFilePath = Path.Combine(existingDir, "500304E0");
+
+        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track1.mp3");
+        Assert.True(File.Exists(track1Path), $"Test file not found: {track1Path}");
+
+        var existingTonie = new TonieAudio(
+            sources: new[] { track1Path },
+            audioId: 0x11111111,
+            bitRate: 96000,
+            useVbr: false,
+            prefixLocation: null
+        );
+
+        File.WriteAllBytes(existingFilePath, existingTonie.FileContent);
+        var existingHash = BitConverter.ToString(existingTonie.Header.Hash).Replace("-", "");
+        Console.WriteLine($"  ✓ Created existing tonie at: {reversedUid}/500304E0");
+        Console.WriteLine($"  ✓ Existing Audio ID: 0x{existingTonie.Header.AudioId:X8}");
+        Console.WriteLine($"  ✓ Existing content hash: {existingHash}");
+
+        // Step 2: Create a different file in TRASHCAN with same UID
+        Console.WriteLine();
+        Console.WriteLine("Step 2: Creating deleted tonie in TRASHCAN with same UID...");
+
+        var trashcanSubDir = Path.Combine(_trashcanDir, "7F0");
+        Directory.CreateDirectory(trashcanSubDir);
+        var deletionTimestamp = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var trashcanFilePath = Path.Combine(trashcanSubDir, $"{deletionTimestamp:X8}.043");
+
+        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track2.mp3");
+        Assert.True(File.Exists(track2Path), $"Test file not found: {track2Path}");
+
+        uint expectedAudioId = 0x22222222;
+        var deletedTonie = new TonieAudio(
+            sources: new[] { track2Path },
+            audioId: deletionTimestamp,
+            bitRate: 96000,
+            useVbr: false,
+            prefixLocation: null
+        );
+
+        File.WriteAllBytes(trashcanFilePath, deletedTonie.FileContent);
+        var deletedHash = BitConverter.ToString(deletedTonie.Header.Hash).Replace("-", "");
+        Console.WriteLine($"  ✓ Created deleted tonie at: TRASHCAN/7F0/{deletionTimestamp:X8}.043");
+        Console.WriteLine($"  ✓ Deleted content hash: {deletedHash}");
+
+        // Verify hashes are different
+        Assert.NotEqual(existingHash, deletedHash);
+        Console.WriteLine($"  ✓ Hashes are different (different content)");
+
+        // Step 3: Store metadata in customTonies.json
+        Console.WriteLine();
+        Console.WriteLine("Step 3: Storing metadata in customTonies.json...");
+        var customTonies = new JArray
+        {
+            new JObject
+            {
+                ["no"] = "0",
+                ["hash"] = new JArray { deletedHash },
+                ["title"] = $"Deleted Album [RFID: {rfidUid}]",
+                ["directory"] = reversedUid,
+                ["audio_id"] = new JArray { expectedAudioId.ToString("X8") },
+                ["tracks"] = new JArray { "Track 1" }
+            }
+        };
+        File.WriteAllText(_customTonieJsonPath, customTonies.ToString(Formatting.Indented));
+        Console.WriteLine($"  ✓ Metadata stored with expected Audio ID: 0x{expectedAudioId:X8}");
+
+        // Step 4: Scan TRASHCAN
+        Console.WriteLine();
+        Console.WriteLine("Step 4: Scanning TRASHCAN...");
+        var metadataService = new TonieMetadataService();
+        var trashcanService = new TrashcanService(metadataService);
+
+        var deletedTonies = await trashcanService.ScanTrashcanAsync(_testDir);
+        Assert.Single(deletedTonies);
+        var scannedTonie = deletedTonies.First();
+        Console.WriteLine($"  ✓ Found 1 deleted tonie with UID: {scannedTonie.Uid}");
+
+        // Step 5: Attempt restore WITH overwrite flag - should succeed
+        Console.WriteLine();
+        Console.WriteLine("Step 5: Attempting restore with overwrite (should succeed)...");
+        var (success, message) = await trashcanService.RestoreTonieAsync(scannedTonie, _testDir, allowOverwrite: true);
+
+        Assert.True(success, $"Restore should succeed. Message: {message}");
+        Console.WriteLine($"  ✓ Restore succeeded: {message}");
+
+        // Step 6: Verify file was overwritten
+        Console.WriteLine();
+        Console.WriteLine("Step 6: Verifying file was overwritten...");
+        var restoredTonie = TonieAudio.FromFile(existingFilePath, readAudio: false);
+        var restoredHash = BitConverter.ToString(restoredTonie.Header.Hash).Replace("-", "");
+
+        Console.WriteLine($"  Original hash:  {existingHash}");
+        Console.WriteLine($"  Restored hash:  {restoredHash}");
+        Assert.Equal(deletedHash, restoredHash);
+        Console.WriteLine($"  ✓ File was overwritten (content hash changed)");
+
+        Console.WriteLine($"  ✓ Restored Audio ID: 0x{restoredTonie.Header.AudioId:X8}");
+        Assert.Equal(expectedAudioId, restoredTonie.Header.AudioId);
+        Console.WriteLine($"  ✓ Audio ID restored to original value: 0x{expectedAudioId:X8}");
+
+        Console.WriteLine();
+        Console.WriteLine("=== TEST PASSED ===");
+        Console.WriteLine("✓ Overwrite functionality working correctly");
+        Console.WriteLine("✓ File successfully replaced with deleted version");
+        Console.WriteLine("✓ Audio ID correctly restored");
+    }
+
     private string ReverseByteOrder(string hexString)
     {
         if (string.IsNullOrEmpty(hexString) || hexString.Length % 2 != 0)
