@@ -165,9 +165,10 @@ public class SequentialCustomTonieTests : IDisposable
         Console.WriteLine($"  - First tonie hash: {firstHash}");
         Console.WriteLine($"  - Second tonie hash: {secondHash}");
 
-        // Different audio IDs should produce different hashes
-        Assert.NotEqual(firstHash, secondHash);
-        Console.WriteLine("  - ✓ Hashes are different (different audio IDs)");
+        // FIXED: Same audio source should produce same hash, regardless of audio ID
+        // The hash only covers the audio data, not the header with audioId
+        Assert.Equal(firstHash, secondHash);
+        Console.WriteLine("  - ✓ Hashes are identical (same audio source)");
 
         // Step 9: Add third custom tonie with SAME audio ID as first tonie
         Console.WriteLine("Step 9: Adding third custom tonie with same audio ID as first tonie...");
@@ -202,10 +203,11 @@ public class SequentialCustomTonieTests : IDisposable
         Console.WriteLine($"  - Third tonie audio ID: 0x{thirdAudioId:X8}");
         Console.WriteLine($"  - Third tonie hash: {thirdHash}");
 
-        // Same audio source + same audio ID = same hash
+        // Same audio source = same hash (regardless of audio ID)
         Assert.Equal(firstAudioId, thirdAudioId);
         Assert.Equal(firstHash, thirdHash);
-        Console.WriteLine("  - ✓ Third tonie has same audio ID and hash as first tonie");
+        Assert.Equal(secondHash, thirdHash); // All three should have same hash now!
+        Console.WriteLine("  - ✓ All three tonies have same hash (same audio source)");
 
         // Step 12: Verify customTonies.json exists and has correct entries
         Console.WriteLine("Step 12: Verifying customTonies.json...");
@@ -213,32 +215,27 @@ public class SequentialCustomTonieTests : IDisposable
 
         var customToniesJson = JObject.Parse(File.ReadAllText(_customTonieJsonPath));
 
-        // We expect 2 unique hashes (first==third, second is different)
-        Assert.Equal(2, customToniesJson.Count);
-        Console.WriteLine($"  - ✓ customTonies.json has 2 entries (2 unique hashes)");
+        // FIXED: We expect only 1 unique hash now (all three tonies use same audio source)
+        Assert.Single(customToniesJson);
+        Console.WriteLine($"  - ✓ customTonies.json has 1 entry (all tonies have same hash)");
 
-        // Verify all three hashes are registered
-        Assert.True(customToniesJson.ContainsKey(firstHash), $"First hash should exist: {firstHash}");
-        Assert.True(customToniesJson.ContainsKey(secondHash), $"Second hash should exist: {secondHash}");
-        Assert.True(customToniesJson.ContainsKey(thirdHash), $"Third hash should exist: {thirdHash}");
+        // Verify the single hash is present
+        Assert.True(customToniesJson.ContainsKey(firstHash), $"Hash should exist: {firstHash}");
 
         var entries = customToniesJson.Properties().ToList();
-        Console.WriteLine($"  - customTonies.json entries:");
+        Console.WriteLine($"  - customTonies.json entry:");
         foreach (var entry in entries)
         {
             Console.WriteLine($"    - {entry.Name}: {entry.Value}");
         }
 
-        // Verify first two RFIDs are present in customTonies.json
-        // Note: Third RFID won't be in customTonies.json because its hash already exists (registered by first tonie)
-        // The AddCustomTonie method checks if hash already exists and doesn't overwrite
+        // Verify only the first RFID is present (others were not added because hash already existed)
         var allValues = string.Join(" ", entries.Select(e => e.Value.ToString()));
         Assert.Contains(firstRfid, allValues);
-        Assert.Contains(secondRfid, allValues);
-        Console.WriteLine($"  - ✓ First two RFIDs found: {firstRfid}, {secondRfid}");
-        Console.WriteLine($"  - Note: Third RFID ({thirdRfid}) not in customTonies.json (hash already registered by first tonie)");
+        Console.WriteLine($"  - ✓ First RFID found: {firstRfid}");
+        Console.WriteLine($"  - Note: Second and third RFIDs ({secondRfid}, {thirdRfid}) not in customTonies.json (hash already registered by first tonie)");
 
-        Console.WriteLine("Test completed successfully! Verified that same audio source + same audio ID = same hash.");
+        Console.WriteLine("Test completed successfully! Verified that same audio source = same hash (regardless of audio ID).");
     }
 
     /// <summary>

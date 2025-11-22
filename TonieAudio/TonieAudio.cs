@@ -1176,7 +1176,9 @@ namespace TonieFile
                 tags.Fields["encoder_options"] = "--quiet --bitrate 96 --vbr";
                 tags.Fields["pad"] = new string('0', 0x138);
 
-                OpusOggWriteStream oggOut = new OpusOggWriteStream(encoder, outputData, tags, samplingRate, (int)audioId);
+                // Use constant stream ID (1) so that identical audio produces identical hash
+                // The audioId is stored separately in the header and should not affect the audio stream
+                OpusOggWriteStream oggOut = new OpusOggWriteStream(encoder, outputData, tags, samplingRate, 1);
 
                 uint lastIndex = 0;
                 int track = 0;

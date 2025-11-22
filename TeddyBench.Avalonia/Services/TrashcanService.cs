@@ -84,27 +84,28 @@ namespace TeddyBench.Avalonia.Services
                 var fileInfo = new FileInfo(filePath);
                 var deletionDate = fileInfo.LastWriteTime;
 
-                // Extract filename for UID reconstruction
-                var fileName = Path.GetFileNameWithoutExtension(filePath);
-
-                // Extract UID from directory name and filename
-                // TRASHCAN structure: {dir}/{filename}.043 where dir+filename = reversed_UID minus last digit
-                // Example: "E40" + "67979AE0" = "E4067979AE0"
-                //
-                // HYPOTHESIS (UNVERIFIED): All UIDs start with "04", so reversed UIDs end with "04"
-                // TRASHCAN appears to remove the last "4", so we add it back: "E4067979AE0" + "4" = "E4067979AE04"
-                // Then reverse byte pairs to get original UID: "04AE797906E4"
-                //
-                // TODO: This logic needs verification with a known UID test case
-                // Create custom Tonie with known UID → let Toniebox delete it → verify TRASHCAN structure matches
-                var dirName = Path.GetFileName(Path.GetDirectoryName(filePath));
-                var uidReversedIncomplete = dirName + fileName; // e.g., "E4067979AE0" (11 chars)
-                var uidReversed = uidReversedIncomplete + "4"; // Add back the missing last digit (HYPOTHESIS)
-                var uid = ReverseByteOrder(uidReversed); // Reverse to get actual UID
-
                 // Get metadata
                 var hash = BitConverter.ToString(tonie.Header.Hash).Replace("-", "");
                 var (title, imagePath, isCustom) = _metadataService.GetTonieInfo(hash);
+
+                // Extract UID from customTonies.json title if it's a custom tonie
+                // The Toniebox uses an internal UID for TRASHCAN that's different from the RFID tag UID
+                // However, custom tonies store the RFID in their title: "Title [RFID: 0EED33EA]"
+                // We extract this RFID to enable restoration to the correct CONTENT location
+                string uid = "Unknown";
+                if (isCustom && !string.IsNullOrEmpty(title))
+                {
+                    // Try to extract RFID from title using regex pattern
+                    var rfidMatch = System.Text.RegularExpressions.Regex.Match(
+                        title,
+                        @"\[RFID:\s*([0-9A-F]{8})\]",
+                        System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                    );
+                    if (rfidMatch.Success)
+                    {
+                        uid = rfidMatch.Groups[1].Value.ToUpperInvariant();
+                    }
+                }
 
                 // Calculate duration using CalculateStatistics
                 tonie.CalculateStatistics(out _, out _, out _, out _, out _, out _, out ulong highestGranule);
