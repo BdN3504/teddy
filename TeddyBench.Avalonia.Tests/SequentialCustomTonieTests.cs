@@ -300,9 +300,13 @@ public class SequentialCustomTonieTests : IDisposable
             audioId  // Pass the audio ID (null for auto-generate)
         );
 
+        // Get the audio ID from the created file
+        var createdTonie = TonieAudio.FromFile(targetFile, readAudio: false);
+        var actualAudioId = createdTonie.Header.AudioId;
+
         // Register in metadata
         var sourceFolderName = new TonieFileService().GetSourceFolderName(audioPaths);
-        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, rfidUid);
+        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, rfidUid, actualAudioId, audioPaths);
 
         // Refresh directory
         await SimulateDirectoryOpen(viewModel, _contentDir);

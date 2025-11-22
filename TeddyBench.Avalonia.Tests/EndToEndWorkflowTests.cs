@@ -290,9 +290,13 @@ public class EndToEndWorkflowTests : IDisposable
             rfidUid
         );
 
+        // Get the audio ID from the created file
+        var createdTonie = TonieAudio.FromFile(targetFile, readAudio: false);
+        var audioId = createdTonie.Header.AudioId;
+
         // Register in metadata
         var sourceFolderName = new TonieFileService().GetSourceFolderName(audioPaths);
-        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, rfidUid);
+        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, rfidUid, audioId, audioPaths);
 
         // Refresh directory
         await SimulateDirectoryOpen(viewModel, _contentDir);

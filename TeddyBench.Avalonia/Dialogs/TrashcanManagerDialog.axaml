@@ -40,7 +40,7 @@
                         <DataTemplate>
                             <Border Padding="10"
                                     Margin="5"
-                                    Background="{Binding IsSelected, Converter={StaticResource BoolToColorConverter}}"
+                                    Background="White"
                                     BorderBrush="#95a5a6"
                                     BorderThickness="1"
                                     CornerRadius="5">

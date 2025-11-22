@@ -72,16 +72,21 @@ public class AssignNewUidTests : IDisposable
         var tonieFileService = new TonieFileService();
         var reversedUid = tonieFileService.ReverseUidBytes(initialUid);
 
+        var trackPaths = new[] { track1Path, track2Path };
         var (generatedHash, targetFile) = customTonieService.CreateCustomTonieFile(
             _contentDir,
             reversedUid,
-            new[] { track1Path, track2Path },
+            trackPaths,
             initialUid
         );
 
+        // Get the audio ID from the created file
+        var createdTonie = TonieAudio.FromFile(targetFile, readAudio: false);
+        var audioId = createdTonie.Header.AudioId;
+
         // Register in metadata with initial RFID
-        var sourceFolderName = new TonieFileService().GetSourceFolderName(new[] { track1Path, track2Path });
-        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, initialUid);
+        var sourceFolderName = new TonieFileService().GetSourceFolderName(trackPaths);
+        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, initialUid, audioId, trackPaths);
 
         // Verify initial customTonies.json contains the initial RFID
         var customToniesJson = JObject.Parse(File.ReadAllText(_customTonieJsonPath));
@@ -121,7 +126,12 @@ public class AssignNewUidTests : IDisposable
         Console.WriteLine($"New custom name: {newCustomName}");
 
         // Update customTonies.json
-        metadataService.UpdateCustomTonie(hash, newCustomName);
+        var existingMetadata = metadataService.GetCustomTonieMetadata(hash);
+        if (existingMetadata != null)
+        {
+            existingMetadata.Title = newCustomName;
+            metadataService.UpdateCustomTonie(hash, existingMetadata);
+        }
 
         // Move the file to new directory (simulate the full AssignNewUid operation)
         var newReversedUid = tonieFileService.ReverseUidBytes(newUid);
@@ -274,7 +284,12 @@ public class AssignNewUidTests : IDisposable
         string newCustomName = $"{titlePart} [RFID: {newUid}]";
 
         // Update
-        metadataService.UpdateCustomTonie(generatedHash, newCustomName);
+        var existingMetadata = metadataService.GetCustomTonieMetadata(generatedHash);
+        if (existingMetadata != null)
+        {
+            existingMetadata.Title = newCustomName;
+            metadataService.UpdateCustomTonie(generatedHash, existingMetadata);
+        }
 
         // Assert - Verify the RFID was appended correctly
         var updatedCustomToniesJson = JObject.Parse(File.ReadAllText(_customTonieJsonPath));
