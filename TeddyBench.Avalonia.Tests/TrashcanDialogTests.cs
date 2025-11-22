@@ -183,4 +183,71 @@ public class TrashcanDialogTests
 
         Console.WriteLine("=== Test completed ===");
     }
+
+    [AvaloniaFact]
+    public async Task RfidInputDialog_ShouldValidateUidCorrectly()
+    {
+        Console.WriteLine("=== Testing RfidInputDialog validation ===");
+
+        // Create a test window
+        var parentWindow = new Window();
+        parentWindow.Show();
+
+        Exception? caughtException = null;
+
+        try
+        {
+            // Create the RFID input dialog with empty prefix (TRASHCAN restoration scenario)
+            var dialog = new RfidInputDialog("", CONTENT_PATH);
+
+            // Get the ViewModel
+            var viewModel = dialog.DataContext as RfidInputDialogViewModel;
+            Assert.NotNull(viewModel);
+
+            Console.WriteLine("Step 1: Testing empty UID (should be invalid)");
+            Assert.False(viewModel.CanSubmit);
+            Assert.NotEmpty(viewModel.ErrorMessage);
+            Console.WriteLine($"  ✓ Error message: {viewModel.ErrorMessage}");
+
+            Console.WriteLine("Step 2: Testing partial UID (should be invalid)");
+            viewModel.RfidUid = "0EED";
+            Assert.False(viewModel.CanSubmit);
+            Assert.Contains("8 characters", viewModel.ErrorMessage);
+            Console.WriteLine($"  ✓ Error message: {viewModel.ErrorMessage}");
+
+            Console.WriteLine("Step 3: Testing invalid characters (should be invalid)");
+            viewModel.RfidUid = "0EEDXXYZ";
+            Assert.False(viewModel.CanSubmit);
+            Console.WriteLine($"  ✓ Error message: {viewModel.ErrorMessage}");
+
+            Console.WriteLine("Step 4: Testing valid UID (should be valid)");
+            viewModel.RfidUid = "0EED33EA";
+            Assert.True(viewModel.CanSubmit);
+            Assert.Empty(viewModel.ErrorMessage);
+            Console.WriteLine("  ✓ Valid UID accepted");
+
+            Console.WriteLine("✓ All validation tests passed!");
+        }
+        catch (Exception ex)
+        {
+            caughtException = ex;
+            Console.WriteLine($"✗ Test failed: {ex.Message}");
+        }
+
+        // Assert no exceptions
+        Assert.Null(caughtException);
+
+        // Cleanup
+        try
+        {
+            parentWindow.Close();
+        }
+        catch (InvalidOperationException)
+        {
+            // Ignore Avalonia headless rendering cleanup errors
+            // These are not related to the actual test logic
+        }
+
+        Console.WriteLine("=== Test completed ===");
+    }
 }

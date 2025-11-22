@@ -537,6 +537,16 @@ namespace TonieFile
         }
 
         /// <summary>
+        /// Updates the FileContent with the current Header values.
+        /// Call this method after modifying Header fields (e.g., AudioId) to ensure
+        /// the changes are reflected in the FileContent byte array.
+        /// </summary>
+        public void UpdateFileContent()
+        {
+            WriteHeader();
+        }
+
+        /// <summary>
         /// Generates audio from track sources by building the Ogg stream manually.
         /// This is used when we have pre-encoded tracks to avoid quality loss.
         /// New tracks are encoded to temp files first, then their pages are extracted.

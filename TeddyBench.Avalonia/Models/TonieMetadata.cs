@@ -40,5 +40,8 @@ namespace TeddyBench.Avalonia.Models
 
         [JsonProperty("pic")]
         public string Pic { get; set; } = string.Empty;
+
+        [JsonProperty("directory")]
+        public string? Directory { get; set; }
     }
 }

@@ -480,7 +480,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 // Get the actual audio ID used (either custom or file creation timestamp)
                 uint actualAudioId = customAudioId ?? (uint)((DateTimeOffset)new FileInfo(targetFile).CreationTimeUtc).ToUnixTimeSeconds();
-                _customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, uidInput, actualAudioId, sortedAudioPaths);
+                _customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, uidInput, actualAudioId, sortedAudioPaths, reversedUid);
             }
 
             // Refresh the directory to show the new Tonie

@@ -98,13 +98,19 @@ public class CustomTonieCreationService
     /// <summary>
     /// Registers a custom Tonie in the metadata database.
     /// </summary>
-    public void RegisterCustomTonie(string hash, string sourceFolderName, string originalUid, uint audioId, string[] trackPaths)
+    /// <param name="hash">The hash of the Tonie file</param>
+    /// <param name="sourceFolderName">The source folder name to use as title</param>
+    /// <param name="originalUid">The original RFID UID (user-entered format)</param>
+    /// <param name="audioId">The audio ID</param>
+    /// <param name="trackPaths">Array of track file paths</param>
+    /// <param name="directory">The directory name where the tonie is stored (e.g., "EA33ED0E")</param>
+    public void RegisterCustomTonie(string hash, string sourceFolderName, string originalUid, uint audioId, string[] trackPaths, string directory)
     {
         string customTitle = $"{sourceFolderName} [RFID: {originalUid}]";
 
         // Extract track names from file paths
         var tracks = trackPaths.Select(path => System.IO.Path.GetFileNameWithoutExtension(path)).ToList();
 
-        _metadataService.AddCustomTonie(hash, customTitle, audioId, tracks);
+        _metadataService.AddCustomTonie(hash, customTitle, audioId, tracks, directory);
     }
 }

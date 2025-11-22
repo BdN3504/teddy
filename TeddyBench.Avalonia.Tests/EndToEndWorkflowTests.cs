@@ -13,6 +13,7 @@ using TeddyBench.Avalonia.ViewModels;
 using TeddyBench.Avalonia.Dialogs;
 using TonieFile;
 using Xunit;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace TeddyBench.Avalonia.Tests;
@@ -79,8 +80,8 @@ public class EndToEndWorkflowTests : IDisposable
         Console.WriteLine("[TIMING] CreateTestTonieFile: Starting...");
 
         // Get test data files - using real MP3 files for realistic testing
-        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "gold.mp3");
-        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "gold_flume_remix.mp3");
+        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track1.mp3");
+        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track2.mp3");
 
         Console.WriteLine($"[TIMING] CreateTestTonieFile: Creating TonieAudio with 2 tracks...");
         var createStart = Stopwatch.StartNew();
@@ -106,13 +107,20 @@ public class EndToEndWorkflowTests : IDisposable
         Array.Copy(tonie.FileContent, 0x1000, audioData, 0, audioData.Length);
         var hash = BitConverter.ToString(sha1.ComputeHash(audioData)).Replace("-", "");
 
-        // Create customTonies.json entry
-        var customTonies = new JObject
+        // Create customTonies.json entry (new array format)
+        var customTonies = new JArray
         {
-            [hash] = "Test Tonie [RFID: 0EED51A1]"
+            new JObject
+            {
+                ["No"] = "0",
+                ["Hash"] = hash,
+                ["Title"] = "Test Tonie [RFID: 0EED51A1]",
+                ["AudioId"] = new JArray { "0451ED0E" },
+                ["Tracks"] = new JArray()
+            }
         };
 
-        File.WriteAllText(_customTonieJsonPath, customTonies.ToString());
+        File.WriteAllText(_customTonieJsonPath, customTonies.ToString(Formatting.Indented));
     }
 
     [AvaloniaFact]
@@ -152,8 +160,9 @@ public class EndToEndWorkflowTests : IDisposable
         var tonieAudio = TonieAudio.FromFile(_existingTonieFile, readAudio: false);
         var hashString = BitConverter.ToString(tonieAudio.Header.Hash).Replace("-", "");
 
-        var customTonieJson = JObject.Parse(File.ReadAllText(_customTonieJsonPath));
-        Assert.True(customTonieJson.ContainsKey(hashString), "Hash should exist in customTonies.json");
+        var customTonieJson = JArray.Parse(File.ReadAllText(_customTonieJsonPath));
+        var hashExists = customTonieJson.Any(entry => entry["Hash"]?.ToString() == hashString);
+        Assert.True(hashExists, "Hash should exist in customTonies.json");
 
         // Step 4: Select the tonie
         Console.WriteLine("Step 4: Selecting tonie...");
@@ -173,8 +182,8 @@ public class EndToEndWorkflowTests : IDisposable
         // Step 6: Add a custom tonie with track1 and track2
         Console.WriteLine("Step 6: Adding custom tonie with 2 tracks...");
         stepSw.Restart();
-        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "gold.mp3");
-        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "gold_flume_remix.mp3");
+        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track1.mp3");
+        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track2.mp3");
 
         var newTonieFile = await SimulateAddCustomTonie(
             viewModel,
@@ -194,7 +203,7 @@ public class EndToEndWorkflowTests : IDisposable
 
         // Step 8: Open modify dialog and add track3
         Console.WriteLine("Step 8: Opening modify dialog and adding track3...");
-        var track3Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "titus_wacht_auf.mp3");
+        var track3Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track3.mp3");
 
         // Step 9: Press encode button and wait for encoding to complete
         Console.WriteLine("Step 9: Pressing encode button and waiting for encoding to complete...");
@@ -295,8 +304,8 @@ public class EndToEndWorkflowTests : IDisposable
         var audioId = createdTonie.Header.AudioId;
 
         // Register in metadata
-        var sourceFolderName = new TonieFileService().GetSourceFolderName(audioPaths);
-        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, rfidUid, audioId, audioPaths);
+        var sourceFolderName = tonieFileService.GetSourceFolderName(audioPaths);
+        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, rfidUid, audioId, audioPaths, reversedUid);
 
         // Refresh directory
         await SimulateDirectoryOpen(viewModel, _contentDir);

@@ -81,6 +81,37 @@ public partial class TrashcanManagerDialogViewModel : ObservableObject
             return;
         }
 
+        // Check if UID is unknown - if so, ask user to provide it
+        if (SelectedTonie.Uid == "Unknown")
+        {
+            StatusText = "UID unknown - please enter the RFID tag UID...";
+
+            // Get CONTENT directory path for validation
+            var contentPath = System.IO.Path.Combine(_sdCardPath, "CONTENT");
+
+            // Show RFID input dialog with empty prefix (user will enter full 8 characters)
+            var rfidDialog = new RfidInputDialog("", contentPath);
+            var result = await rfidDialog.ShowDialog<bool?>(_window);
+
+            if (result != true)
+            {
+                StatusText = "Restore cancelled";
+                return;
+            }
+
+            // Get the entered UID
+            var enteredUid = rfidDialog.GetRfidUid();
+            if (string.IsNullOrEmpty(enteredUid))
+            {
+                StatusText = "Restore cancelled - no UID entered";
+                return;
+            }
+
+            // Update the UID in the selected tonie
+            SelectedTonie.Uid = enteredUid;
+            StatusText = $"Using RFID UID: {enteredUid}";
+        }
+
         IsLoading = true;
         StatusText = $"Restoring {SelectedTonie.DisplayName}...";
 

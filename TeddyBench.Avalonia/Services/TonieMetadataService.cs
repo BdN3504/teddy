@@ -172,7 +172,7 @@ namespace TeddyBench.Avalonia.Services
             return (customTitle, null, true);
         }
 
-        public void AddCustomTonie(string hash, string title, uint? audioId = null, List<string>? tracks = null)
+        public void AddCustomTonie(string hash, string title, uint? audioId = null, List<string>? tracks = null, string? directory = null)
         {
             hash = hash.ToUpperInvariant();
 
@@ -192,7 +192,8 @@ namespace TeddyBench.Avalonia.Services
                     Category = "custom",
                     Language = "en-us",
                     AudioId = audioId.HasValue ? new List<string> { audioId.Value.ToString() } : new List<string>(),
-                    Tracks = tracks ?? new List<string>()
+                    Tracks = tracks ?? new List<string>(),
+                    Directory = directory
                 };
 
                 _customTonies.Add(metadata);
@@ -223,6 +224,7 @@ namespace TeddyBench.Avalonia.Services
                 existing.Model = updatedMetadata.Model;
                 existing.Release = updatedMetadata.Release;
                 existing.Pic = updatedMetadata.Pic;
+                existing.Directory = updatedMetadata.Directory;
 
                 _customToniesModified = true;
 

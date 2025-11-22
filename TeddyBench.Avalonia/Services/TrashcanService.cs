@@ -88,22 +88,32 @@ namespace TeddyBench.Avalonia.Services
                 var hash = BitConverter.ToString(tonie.Header.Hash).Replace("-", "");
                 var (title, imagePath, isCustom) = _metadataService.GetTonieInfo(hash);
 
-                // Extract UID from customTonies.json title if it's a custom tonie
+                // Get directory from customTonies.json metadata if available
                 // The Toniebox uses an internal UID for TRASHCAN that's different from the RFID tag UID
-                // However, custom tonies store the RFID in their title: "Title [RFID: 0EED33EA]"
-                // We extract this RFID to enable restoration to the correct CONTENT location
+                // We store the actual directory name in customTonies.json for reliable restoration
                 string uid = "Unknown";
-                if (isCustom && !string.IsNullOrEmpty(title))
+                if (isCustom)
                 {
-                    // Try to extract RFID from title using regex pattern
-                    var rfidMatch = System.Text.RegularExpressions.Regex.Match(
-                        title,
-                        @"\[RFID:\s*([0-9A-F]{8})\]",
-                        System.Text.RegularExpressions.RegexOptions.IgnoreCase
-                    );
-                    if (rfidMatch.Success)
+                    var metadata = _metadataService.GetCustomTonieMetadata(hash);
+                    if (metadata != null && !string.IsNullOrEmpty(metadata.Directory))
                     {
-                        uid = rfidMatch.Groups[1].Value.ToUpperInvariant();
+                        // Use the stored directory name (e.g., "EA33ED0E")
+                        // Reverse it to get user-facing RFID format (e.g., "0EED33EA")
+                        uid = ReverseByteOrder(metadata.Directory);
+                    }
+                    else
+                    {
+                        // Fallback: Try to extract RFID from title if Directory field is not present
+                        // This handles old entries that were created before the Directory field was added
+                        var rfidMatch = System.Text.RegularExpressions.Regex.Match(
+                            title,
+                            @"\[RFID:\s*([0-9A-F]{8})\]",
+                            System.Text.RegularExpressions.RegexOptions.IgnoreCase
+                        );
+                        if (rfidMatch.Success)
+                        {
+                            uid = rfidMatch.Groups[1].Value.ToUpperInvariant();
+                        }
                     }
                 }
 
@@ -184,10 +194,30 @@ namespace TeddyBench.Avalonia.Services
                 // Copy the file (don't delete from TRASHCAN yet, safer to keep backup)
                 await Task.Run(() => File.Copy(deletedTonie.FilePath, targetFilePath, false));
 
-                // Update customTonies.json if it's a custom tonie
+                // Restore original Audio ID if it's a custom tonie
                 if (deletedTonie.IsCustomTonie)
                 {
-                    _metadataService.AddCustomTonie(deletedTonie.Hash, deletedTonie.DisplayName);
+                    // Get metadata from customTonies.json
+                    var metadata = _metadataService.GetCustomTonieMetadata(deletedTonie.Hash);
+
+                    if (metadata != null && metadata.AudioId != null && metadata.AudioId.Count > 0)
+                    {
+                        // Parse the original Audio ID from customTonies.json
+                        if (uint.TryParse(metadata.AudioId[0], System.Globalization.NumberStyles.HexNumber, null, out uint originalAudioId))
+                        {
+                            // Read the restored file
+                            var restoredTonie = TonieAudio.FromFile(targetFilePath, readAudio: true);
+
+                            // Update the Audio ID in the header to the original value
+                            restoredTonie.Header.AudioId = originalAudioId;
+
+                            // Update FileContent to reflect the header change
+                            restoredTonie.UpdateFileContent();
+
+                            // Write the file back with the corrected Audio ID
+                            File.WriteAllBytes(targetFilePath, restoredTonie.FileContent);
+                        }
+                    }
                 }
 
                 return (true, $"Successfully restored to {reversedUid}/500304E0");

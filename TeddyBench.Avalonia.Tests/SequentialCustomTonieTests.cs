@@ -213,26 +213,25 @@ public class SequentialCustomTonieTests : IDisposable
         Console.WriteLine("Step 12: Verifying customTonies.json...");
         Assert.True(File.Exists(_customTonieJsonPath), $"customTonies.json should exist at: {_customTonieJsonPath}");
 
-        var customToniesJson = JObject.Parse(File.ReadAllText(_customTonieJsonPath));
+        var customToniesJson = JArray.Parse(File.ReadAllText(_customTonieJsonPath));
 
         // FIXED: We expect only 1 unique hash now (all three tonies use same audio source)
         Assert.Single(customToniesJson);
         Console.WriteLine($"  - ✓ customTonies.json has 1 entry (all tonies have same hash)");
 
         // Verify the single hash is present
-        Assert.True(customToniesJson.ContainsKey(firstHash), $"Hash should exist: {firstHash}");
+        var firstEntry = customToniesJson[0] as JObject;
+        Assert.NotNull(firstEntry);
+        Assert.Equal(firstHash, firstEntry["Hash"]?.ToString());
 
-        var entries = customToniesJson.Properties().ToList();
         Console.WriteLine($"  - customTonies.json entry:");
-        foreach (var entry in entries)
-        {
-            Console.WriteLine($"    - {entry.Name}: {entry.Value}");
-        }
+        Console.WriteLine($"    - Hash: {firstEntry["Hash"]}");
+        Console.WriteLine($"    - Title: {firstEntry["Title"]}");
 
         // Verify only the first RFID is present (others were not added because hash already existed)
-        var allValues = string.Join(" ", entries.Select(e => e.Value.ToString()));
-        Assert.Contains(firstRfid, allValues);
-        Console.WriteLine($"  - ✓ First RFID found: {firstRfid}");
+        var title = firstEntry["Title"]?.ToString() ?? "";
+        Assert.Contains(firstRfid, title);
+        Console.WriteLine($"  - ✓ First RFID found in title: {firstRfid}");
         Console.WriteLine($"  - Note: Second and third RFIDs ({secondRfid}, {thirdRfid}) not in customTonies.json (hash already registered by first tonie)");
 
         Console.WriteLine("Test completed successfully! Verified that same audio source = same hash (regardless of audio ID).");
@@ -302,8 +301,8 @@ public class SequentialCustomTonieTests : IDisposable
         var actualAudioId = createdTonie.Header.AudioId;
 
         // Register in metadata
-        var sourceFolderName = new TonieFileService().GetSourceFolderName(audioPaths);
-        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, rfidUid, actualAudioId, audioPaths);
+        var sourceFolderName = tonieFileService.GetSourceFolderName(audioPaths);
+        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, rfidUid, actualAudioId, audioPaths, reversedUid);
 
         // Refresh directory
         await SimulateDirectoryOpen(viewModel, _contentDir);

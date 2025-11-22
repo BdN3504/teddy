@@ -11,6 +11,7 @@ using TeddyBench.Avalonia.Services;
 using TeddyBench.Avalonia.ViewModels;
 using TonieFile;
 using Xunit;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 
 namespace TeddyBench.Avalonia.Tests;
@@ -362,27 +363,51 @@ public class SearchFunctionalityTests : IDisposable
         Console.WriteLine($"[SEARCH TEST] Tonie file created at: {targetFile}");
         Console.WriteLine($"[SEARCH TEST] Hash: {generatedHash}");
 
+        // Get the audio ID from the created file
+        var createdTonie = TonieAudio.FromFile(targetFile, readAudio: false);
+        var audioId = createdTonie.Header.AudioId;
+        Console.WriteLine($"[SEARCH TEST] Audio ID from file: 0x{audioId:X8}");
+
         // Manually register in customTonies.json with the specific title
         var metadataService = new TonieMetadataService();
         var titleWithRfid = $"{title} [RFID: {rfidUid}]";
 
         // Load existing customTonies.json or create new
         var customToniesPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "customTonies.json");
-        JObject customTonies;
+        JArray customTonies;
 
         if (File.Exists(customToniesPath))
         {
             var json = File.ReadAllText(customToniesPath);
-            customTonies = JObject.Parse(json);
+            customTonies = JArray.Parse(json);
         }
         else
         {
-            customTonies = new JObject();
+            customTonies = new JArray();
         }
 
-        // Add or update the entry
-        customTonies[generatedHash] = titleWithRfid;
-        File.WriteAllText(customToniesPath, customTonies.ToString());
+        // Check if entry already exists
+        var existingEntry = customTonies.FirstOrDefault(e => e["Hash"]?.ToString() == generatedHash) as JObject;
+        if (existingEntry != null)
+        {
+            // Update existing entry
+            existingEntry["Title"] = titleWithRfid;
+        }
+        else
+        {
+            // Add new entry
+            var newEntry = new JObject
+            {
+                ["No"] = customTonies.Count.ToString(),
+                ["Hash"] = generatedHash,
+                ["Title"] = titleWithRfid,
+                ["AudioId"] = new JArray { audioId.ToString("X8") },
+                ["Tracks"] = new JArray()
+            };
+            customTonies.Add(newEntry);
+        }
+
+        File.WriteAllText(customToniesPath, customTonies.ToString(Formatting.Indented));
 
         Console.WriteLine($"[SEARCH TEST] Registered in customTonies.json as '{titleWithRfid}'");
         Console.WriteLine($"[SEARCH TEST] Tonie creation took {sw.ElapsedMilliseconds}ms");

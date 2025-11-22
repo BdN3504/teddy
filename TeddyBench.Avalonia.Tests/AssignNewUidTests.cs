@@ -85,13 +85,14 @@ public class AssignNewUidTests : IDisposable
         var audioId = createdTonie.Header.AudioId;
 
         // Register in metadata with initial RFID
-        var sourceFolderName = new TonieFileService().GetSourceFolderName(trackPaths);
-        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, initialUid, audioId, trackPaths);
+        var sourceFolderName = tonieFileService.GetSourceFolderName(trackPaths);
+        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, initialUid, audioId, trackPaths, reversedUid);
 
         // Verify initial customTonies.json contains the initial RFID
-        var customToniesJson = JObject.Parse(File.ReadAllText(_customTonieJsonPath));
-        Assert.True(customToniesJson.ContainsKey(generatedHash), "Hash should exist in customTonies.json");
-        var initialTitle = customToniesJson[generatedHash]?.ToString();
+        var customToniesJson = JArray.Parse(File.ReadAllText(_customTonieJsonPath));
+        var entry = customToniesJson.FirstOrDefault(e => e["Hash"]?.ToString() == generatedHash) as JObject;
+        Assert.NotNull(entry);
+        var initialTitle = entry["Title"]?.ToString();
         Assert.NotNull(initialTitle);
         Assert.Contains($"[RFID: {initialUid}]", initialTitle);
         Console.WriteLine($"Initial title: {initialTitle}");
@@ -152,13 +153,14 @@ public class AssignNewUidTests : IDisposable
         }
 
         // Assert - Verify customTonies.json was updated correctly
-        var updatedCustomToniesJson = JObject.Parse(File.ReadAllText(_customTonieJsonPath));
+        var updatedCustomToniesJson = JArray.Parse(File.ReadAllText(_customTonieJsonPath));
 
         // Hash should still exist (same tonie, just moved)
-        Assert.True(updatedCustomToniesJson.ContainsKey(hash), "Hash should still exist in customTonies.json");
+        var updatedEntry = updatedCustomToniesJson.FirstOrDefault(e => e["Hash"]?.ToString() == hash) as JObject;
+        Assert.NotNull(updatedEntry);
 
         // Title should contain the new RFID
-        var updatedTitle = updatedCustomToniesJson[hash]?.ToString();
+        var updatedTitle = updatedEntry["Title"]?.ToString();
         Assert.NotNull(updatedTitle);
         Console.WriteLine($"Updated title: {updatedTitle}");
 
@@ -202,7 +204,7 @@ public class AssignNewUidTests : IDisposable
         // Just ensure customTonies.json exists but doesn't contain this hash
         if (!File.Exists(_customTonieJsonPath))
         {
-            File.WriteAllText(_customTonieJsonPath, "{}");
+            File.WriteAllText(_customTonieJsonPath, "[]");
         }
 
         var metadataService = new TonieMetadataService();
@@ -224,8 +226,9 @@ public class AssignNewUidTests : IDisposable
         }
 
         // Assert - Verify customTonies.json was NOT modified
-        var customToniesJson = JObject.Parse(File.ReadAllText(_customTonieJsonPath));
-        Assert.False(customToniesJson.ContainsKey(hash), "Hash should not be in customTonies.json for official tonie");
+        var customToniesJson = JArray.Parse(File.ReadAllText(_customTonieJsonPath));
+        var hashNotFound = !customToniesJson.Any(e => e["Hash"]?.ToString() == hash);
+        Assert.True(hashNotFound, "Hash should not be in customTonies.json for official tonie");
     }
 
     [AvaloniaFact]
@@ -251,12 +254,23 @@ public class AssignNewUidTests : IDisposable
             initialUid
         );
 
-        // Manually create a custom entry without RFID pattern
-        var customTonies = new JObject
+        // Manually create a custom entry without RFID pattern (new array format)
+        // Get the audio ID from the created file
+        var createdTonie = TonieAudio.FromFile(targetFile, readAudio: false);
+        var audioId = createdTonie.Header.AudioId;
+
+        var customTonies = new JArray
         {
-            [generatedHash] = "Custom Title Without RFID"
+            new JObject
+            {
+                ["No"] = "0",
+                ["Hash"] = generatedHash,
+                ["Title"] = "Custom Title Without RFID",
+                ["AudioId"] = new JArray { audioId.ToString("X8") },
+                ["Tracks"] = new JArray()
+            }
         };
-        File.WriteAllText(_customTonieJsonPath, customTonies.ToString());
+        File.WriteAllText(_customTonieJsonPath, customTonies.ToString(Formatting.Indented));
 
         // Act - Simulate AssignNewUid operation
         var metadataService = new TonieMetadataService();
@@ -292,8 +306,10 @@ public class AssignNewUidTests : IDisposable
         }
 
         // Assert - Verify the RFID was appended correctly
-        var updatedCustomToniesJson = JObject.Parse(File.ReadAllText(_customTonieJsonPath));
-        var updatedTitle = updatedCustomToniesJson[generatedHash]?.ToString();
+        var updatedCustomToniesJson = JArray.Parse(File.ReadAllText(_customTonieJsonPath));
+        var updatedTonieEntry = updatedCustomToniesJson.FirstOrDefault(e => e["Hash"]?.ToString() == generatedHash) as JObject;
+        Assert.NotNull(updatedTonieEntry);
+        var updatedTitle = updatedTonieEntry["Title"]?.ToString();
         Assert.Equal("Custom Title Without RFID [RFID: 0EED5108]", updatedTitle);
     }
 
