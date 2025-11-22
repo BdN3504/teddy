@@ -47,6 +47,16 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Bulk remove LIVE flags from all tonies (button)
   - Cross-platform implementation (Windows, Linux, macOS)
 
+- **TRASHCAN Recovery System** ⭐ NEW
+  - Recover Tonies deleted by online Toniebox from quarantine directory
+  - View all quarantined files with metadata (UID, hash, deletion date, duration)
+  - Restore deleted Tonies back to CONTENT folder with original directory structure
+  - Permanently delete files from TRASHCAN
+  - Byte-for-byte restoration: restored files are identical to originals (preserves Audio ID)
+  - Advanced customTonies.json format: stores Directory field for reliable restoration
+  - RFID prompt for unknown Tonies during restoration
+  - Accessible via "TRASHCAN Recovery" toolbar button
+
 - **File Operations**
   - Decode Tonie files to audio
   - Display detailed file information
@@ -74,6 +84,12 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
 - .NET 8.0 compatibility (replaced deprecated APIs)
 
 ### Bug Fixes
+- **Fixed critical bug: Audio ID was incorrectly affecting file hash** ⚠️ IMPORTANT
+  - Audio ID (timestamp) was being used as Ogg logical stream ID, causing identical audio to produce different hashes
+  - Hardware evidence: Toniebox updates Audio ID but keeps hash unchanged when deleting files
+  - Now uses constant stream ID (1) instead of audioId in OpusOggWriteStream
+  - Same audio source now always produces same hash, matching hardware behavior
+  - Fixes hash collision issues in customTonies.json and enables proper TRASHCAN recovery
 - **Fixed hash validation error** when clicking "Show Info" on Tonie files
 - **Fixed extended Info display** - improved layout and formatting of detailed file information
 - **Fixed sorting dropdown alignment** - now properly right-aligned in UI
