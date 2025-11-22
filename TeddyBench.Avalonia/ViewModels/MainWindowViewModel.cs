@@ -641,6 +641,46 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task OpenTrashcanManager()
+    {
+        if (string.IsNullOrEmpty(CurrentDirectory))
+        {
+            StatusText = "Please select a directory first";
+            return;
+        }
+
+        try
+        {
+            // Determine SD card root (assuming CurrentDirectory is CONTENT folder or a subfolder)
+            var sdCardPath = CurrentDirectory;
+            if (sdCardPath.Contains("CONTENT"))
+            {
+                // Navigate up to SD card root
+                sdCardPath = Directory.GetParent(sdCardPath)?.FullName ?? sdCardPath;
+                if (Path.GetFileName(sdCardPath) == "CONTENT")
+                {
+                    sdCardPath = Directory.GetParent(sdCardPath)?.FullName ?? sdCardPath;
+                }
+            }
+
+            var trashcanDialog = new Dialogs.TrashcanManagerDialog();
+            var viewModel = new Dialogs.TrashcanManagerDialogViewModel(trashcanDialog, sdCardPath, _metadataService);
+            trashcanDialog.DataContext = viewModel;
+            await trashcanDialog.ShowDialog(_window);
+
+            // If changes were made, refresh the current view
+            if (viewModel.DialogResult)
+            {
+                await Refresh();
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error opening TRASHCAN manager: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
     private void SelectTonie(TonieFileItem item)
     {
         // Deselect all items

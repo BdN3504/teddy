@@ -115,6 +115,7 @@
                     <Button Command="{Binding ShowInfoCommand}" Content="_Show Info"/>
                     <Button Command="{Binding RefreshCommand}" Content="_Refresh"/>
                     <Button Command="{Binding RemoveAllLiveFlagsCommand}" Content="Remove All _LIVE Flags"/>
+                    <Button Command="{Binding OpenTrashcanManagerCommand}" Content="_TRASHCAN Recovery" IsEnabled="{Binding HasValidDirectory}"/>
                 </StackPanel>
 
                 <!-- Right-aligned sort dropdown -->
