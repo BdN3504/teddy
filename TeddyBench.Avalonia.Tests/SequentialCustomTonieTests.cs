@@ -222,14 +222,21 @@ public class SequentialCustomTonieTests : IDisposable
         // Verify the single hash is present
         var firstEntry = customToniesJson[0] as JObject;
         Assert.NotNull(firstEntry);
-        Assert.Equal(firstHash, firstEntry["Hash"]?.ToString());
+
+        // Note: customTonies.json uses lowercase keys and hash is an array
+        var hashArray = firstEntry["hash"] as JArray;
+        Assert.NotNull(hashArray);
+        Assert.Single(hashArray);
+
+        var actualHash = hashArray[0]?.ToString();
+        Assert.Equal(firstHash, actualHash);
 
         Console.WriteLine($"  - customTonies.json entry:");
-        Console.WriteLine($"    - Hash: {firstEntry["Hash"]}");
-        Console.WriteLine($"    - Title: {firstEntry["Title"]}");
+        Console.WriteLine($"    - hash: {actualHash}");
+        Console.WriteLine($"    - title: {firstEntry["title"]}");
 
         // Verify only the first RFID is present (others were not added because hash already existed)
-        var title = firstEntry["Title"]?.ToString() ?? "";
+        var title = firstEntry["title"]?.ToString() ?? "";
         Assert.Contains(firstRfid, title);
         Console.WriteLine($"  - ✓ First RFID found in title: {firstRfid}");
         Console.WriteLine($"  - Note: Second and third RFIDs ({secondRfid}, {thirdRfid}) not in customTonies.json (hash already registered by first tonie)");

@@ -9,6 +9,6 @@ public class TestAppBuilder
         => AppBuilder.Configure<App>()
             .UseHeadless(new AvaloniaHeadlessPlatformOptions
             {
-                UseHeadlessDrawing = false
+                UseHeadlessDrawing = true
             });
 }

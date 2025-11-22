@@ -107,16 +107,24 @@ public class EndToEndWorkflowTests : IDisposable
         Array.Copy(tonie.FileContent, 0x1000, audioData, 0, audioData.Length);
         var hash = BitConverter.ToString(sha1.ComputeHash(audioData)).Replace("-", "");
 
-        // Create customTonies.json entry (new array format)
+        // Create customTonies.json entry (new array format with lowercase keys to match TonieMetadataService)
         var customTonies = new JArray
         {
             new JObject
             {
-                ["No"] = "0",
-                ["Hash"] = hash,
-                ["Title"] = "Test Tonie [RFID: 0EED51A1]",
-                ["AudioId"] = new JArray { "0451ED0E" },
-                ["Tracks"] = new JArray()
+                ["no"] = "0",
+                ["model"] = "",
+                ["audio_id"] = new JArray { "0451ED0E" },
+                ["hash"] = new JArray { hash },
+                ["title"] = "Test Tonie [RFID: 0EED51A1]",
+                ["series"] = "Test Tonie",
+                ["episodes"] = "Test Tonie [RFID: 0EED51A1]",
+                ["tracks"] = new JArray(),
+                ["release"] = "",
+                ["language"] = "en-us",
+                ["category"] = "custom",
+                ["pic"] = "",
+                ["directory"] = "A13DED0E"
             }
         };
 
@@ -161,7 +169,12 @@ public class EndToEndWorkflowTests : IDisposable
         var hashString = BitConverter.ToString(tonieAudio.Header.Hash).Replace("-", "");
 
         var customTonieJson = JArray.Parse(File.ReadAllText(_customTonieJsonPath));
-        var hashExists = customTonieJson.Any(entry => entry["Hash"]?.ToString() == hashString);
+        // Note: hash is an array in the JSON, not a string
+        var hashExists = customTonieJson.Any(entry =>
+        {
+            var hashArray = entry["hash"] as JArray;
+            return hashArray != null && hashArray.Any(h => h.ToString() == hashString);
+        });
         Assert.True(hashExists, "Hash should exist in customTonies.json");
 
         // Step 4: Select the tonie
