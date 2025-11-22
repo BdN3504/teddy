@@ -178,12 +178,6 @@
                                         <Style Selector="ListBoxItem:selected TextBlock">
                                             <Setter Property="Foreground" Value="#000000"/>
                                         </Style>
-                                        <Style Selector="ListBoxItem:pointerover Border">
-                                            <Setter Property="Background" Value="#F0F0F0"/>
-                                        </Style>
-                                        <Style Selector="ListBoxItem:pointerover TextBlock">
-                                            <Setter Property="Foreground" Value="#000000"/>
-                                        </Style>
                                     </Border.Styles>
                                     <!-- Single selection context menu -->
                                     <Border.ContextMenu>
