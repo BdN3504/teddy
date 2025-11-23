@@ -143,8 +143,14 @@ public partial class TrashcanManagerDialogViewModel : ObservableObject
             }
             else
             {
-                // Check if it's a conflict
-                if (message.StartsWith("CONFLICT:"))
+                // Check if it's a hash conflict (same audio content exists elsewhere)
+                if (message.StartsWith("HASH_CONFLICT:"))
+                {
+                    var existingUid = message.Substring("HASH_CONFLICT:".Length);
+                    await HandleHashConflictAsync(existingUid);
+                }
+                // Check if it's a file path conflict
+                else if (message.StartsWith("CONFLICT:"))
                 {
                     var existingUid = message.Substring("CONFLICT:".Length);
                     await HandleConflictAsync(existingUid);
@@ -222,6 +228,106 @@ public partial class TrashcanManagerDialogViewModel : ObservableObject
             case ConflictResolutionResult.Cancel:
             default:
                 StatusText = "Restore cancelled";
+                break;
+        }
+    }
+
+    private async Task HandleHashConflictAsync(string existingRfidUid)
+    {
+        if (SelectedTonie == null)
+        {
+            return;
+        }
+
+        // Show hash conflict resolution dialog
+        var hashConflictDialog = new HashConflictResolutionDialog(SelectedTonie.DisplayName, existingRfidUid);
+        var result = await hashConflictDialog.ShowDialog<HashConflictResolutionResult>(_window);
+
+        switch (result)
+        {
+            case HashConflictResolutionResult.MoveExisting:
+                // Move the existing file to a new RFID, then restore from trashcan
+                StatusText = "Please enter a new RFID UID for the existing file...";
+
+                // Get CONTENT directory path for validation
+                var contentPath = System.IO.Path.Combine(_sdCardPath, "CONTENT");
+
+                // Show RFID input dialog with empty prefix (user will enter full 8 characters)
+                var rfidDialog = new RfidInputDialog("", contentPath);
+                var rfidResult = await rfidDialog.ShowDialog<bool?>(_window);
+
+                if (rfidResult == true)
+                {
+                    // Get the new UID for the existing file
+                    var newUid = rfidDialog.GetRfidUid();
+                    if (!string.IsNullOrEmpty(newUid))
+                    {
+                        StatusText = $"Moving existing file to {newUid}, then restoring from trashcan...";
+
+                        try
+                        {
+                            // Move the existing file to the new RFID location
+                            var (moveSuccess, moveMessage) = await _trashcanService.MoveTonieToNewRfidAsync(
+                                SelectedTonie.Hash, existingRfidUid, newUid, _sdCardPath);
+
+                            if (!moveSuccess)
+                            {
+                                StatusText = $"Failed to move existing file: {moveMessage}";
+                                return;
+                            }
+
+                            // Now restore from trashcan to the original location
+                            await AttemptRestoreAsync(false);
+                        }
+                        catch (Exception ex)
+                        {
+                            StatusText = $"Error: {ex.Message}";
+                        }
+                    }
+                    else
+                    {
+                        StatusText = "Operation cancelled - no UID entered";
+                    }
+                }
+                else
+                {
+                    StatusText = "Operation cancelled";
+                }
+                break;
+
+            case HashConflictResolutionResult.KeepExisting:
+                // Keep the existing file, delete the trashcan copy
+                StatusText = $"Keeping existing file at {existingRfidUid}, deleting trashcan copy...";
+
+                try
+                {
+                    var (deleteSuccess, deleteMessage) = await _trashcanService.PermanentlyDeleteAsync(SelectedTonie);
+
+                    if (deleteSuccess)
+                    {
+                        StatusText = "Trashcan copy deleted - existing file retained";
+
+                        // Remove from list
+                        DeletedTonies.Remove(SelectedTonie);
+                        HasDeletedTonies = DeletedTonies.Count > 0;
+
+                        // Set dialog result to indicate changes were made
+                        DialogResult = true;
+                    }
+                    else
+                    {
+                        StatusText = $"Failed to delete trashcan copy: {deleteMessage}";
+                    }
+                }
+                catch (Exception ex)
+                {
+                    StatusText = $"Error deleting trashcan copy: {ex.Message}";
+                }
+                break;
+
+            case HashConflictResolutionResult.Cancel:
+            default:
+                StatusText = "Operation cancelled";
                 break;
         }
     }

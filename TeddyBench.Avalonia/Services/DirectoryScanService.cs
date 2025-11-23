@@ -106,6 +106,7 @@ public class DirectoryScanService
         // Try to get metadata for this Tonie
         string title = $"{directoryName}/{file.Name}";
         string? imagePath = null;
+        string hash = string.Empty;
         bool isLive = false;
         bool isKnownTonie = false;
         bool isCustomTonie = false;
@@ -116,10 +117,14 @@ public class DirectoryScanService
 
         try
         {
-            var audio = TonieAudio.FromFile(file.FullName, false);
-            var hash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
-            // Pass the RFID folder name (directoryName) so custom tonies show the RFID instead of hash
-            var (metaTitle, metaImage, metaIsCustom) = _metadataService.GetTonieInfo(hash, directoryName);
+            // First, read just the header (fast: ~1ms)
+            // Only read header for fast scanning (no full audio data)
+            var audioHeader = TonieAudio.FromFile(file.FullName, false);
+            hash = BitConverter.ToString(audioHeader.Header.Hash).Replace("-", "");
+            var audioId = audioHeader.Header.AudioId;
+
+            // Get metadata without calculating tracks (tracks will be populated on-demand during playback)
+            var (metaTitle, metaImage, metaIsCustom) = _metadataService.GetTonieInfo(hash, directoryName, audioId, null);
 
             if (!string.IsNullOrEmpty(metaTitle) && metaTitle != "Unknown Tonie")
             {
@@ -168,7 +173,26 @@ public class DirectoryScanService
             InfoText = $"Size: {file.Length / 1024} KB",
             ImagePath = imagePath,
             IsLive = isLive,
-            IsCustomTonie = isCustomTonie
+            IsCustomTonie = isCustomTonie,
+            Hash = hash
         };
+    }
+
+    /// <summary>
+    /// Formats duration in seconds to a human-readable string.
+    /// Format: m:ss for durations < 1 hour, h:mm:ss for longer durations
+    /// </summary>
+    private string FormatDuration(double totalSeconds)
+    {
+        var ts = TimeSpan.FromSeconds(totalSeconds);
+
+        if (ts.TotalHours >= 1)
+        {
+            return $"{(int)ts.TotalHours}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+        }
+        else
+        {
+            return $"{ts.Minutes}:{ts.Seconds:D2}";
+        }
     }
 }

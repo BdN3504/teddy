@@ -104,7 +104,8 @@ public class CustomTonieCreationService
     /// <param name="audioId">The audio ID</param>
     /// <param name="trackPaths">Array of track file paths</param>
     /// <param name="directory">The directory name where the tonie is stored (e.g., "EA33ED0E")</param>
-    public void RegisterCustomTonie(string hash, string sourceFolderName, string originalUid, uint audioId, string[] trackPaths, string directory)
+    /// <param name="tonieFilePath">Path to the created Tonie file (for calculating duration)</param>
+    public void RegisterCustomTonie(string hash, string sourceFolderName, string originalUid, uint audioId, string[] trackPaths, string directory, string tonieFilePath)
     {
         string customTitle = $"{sourceFolderName} [RFID: {originalUid}]";
 

@@ -29,6 +29,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly DirectoryScanService _scanService;
     private readonly TonieSortService _sortService;
     private readonly CustomTonieCreationService _customTonieService;
+    private readonly TonieTrackInfoService _trackInfoService;
     private bool _isPlayerDialogOpen = false;
     private bool _isModifyDialogOpen = false;
     private bool _isRenameDialogOpen = false;
@@ -61,6 +62,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _scanService = new DirectoryScanService(_metadataService, _liveFlagService);
         _sortService = new TonieSortService();
         _customTonieService = new CustomTonieCreationService(_tonieFileService, _metadataService);
+        _trackInfoService = new TonieTrackInfoService(_metadataService);
 
         // Hook up scan service events
         _scanService.ProgressUpdate += (s, message) => StatusText = message;
@@ -480,7 +482,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 // Get the actual audio ID used (either custom or file creation timestamp)
                 uint actualAudioId = customAudioId ?? (uint)((DateTimeOffset)new FileInfo(targetFile).CreationTimeUtc).ToUnixTimeSeconds();
-                _customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, uidInput, actualAudioId, sortedAudioPaths, reversedUid);
+                _customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, uidInput, actualAudioId, sortedAudioPaths, reversedUid, targetFile);
             }
 
             // Refresh the directory to show the new Tonie
@@ -568,6 +570,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         try
         {
+            // Ensure track info is saved to customTonies.json (if custom tonie)
+            _trackInfoService.EnsureTrackInfo(SelectedFile.FilePath, SelectedFile.Hash);
+
             var audio = TonieAudio.FromFile(SelectedFile.FilePath, true);
 
             // Calculate total audio duration from highest granule position
@@ -1536,7 +1541,7 @@ public partial class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(IsAnyDialogOpen));
             OnPropertyChanged(nameof(IsNoDialogOpen));
             var dialog = new Dialogs.PlayerDialog();
-            var viewModel = new PlayerDialogViewModel(file.FilePath, file.DisplayName, dialog);
+            var viewModel = new PlayerDialogViewModel(file.FilePath, file.DisplayName, _trackInfoService, file.Hash, dialog);
             dialog.DataContext = viewModel;
             await dialog.ShowDialog(_window);
         }

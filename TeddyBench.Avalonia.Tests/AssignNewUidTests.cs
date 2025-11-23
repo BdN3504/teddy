@@ -86,7 +86,7 @@ public class AssignNewUidTests : IDisposable
 
         // Register in metadata with initial RFID
         var sourceFolderName = tonieFileService.GetSourceFolderName(trackPaths);
-        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, initialUid, audioId, trackPaths, reversedUid);
+        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, initialUid, audioId, trackPaths, reversedUid, targetFile);
 
         // Verify initial customTonies.json contains the initial RFID
         var customToniesJson = JArray.Parse(File.ReadAllText(_customTonieJsonPath));

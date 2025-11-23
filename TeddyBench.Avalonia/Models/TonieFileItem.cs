@@ -33,4 +33,7 @@ public partial class TonieFileItem : ObservableObject
 
     [ObservableProperty]
     private string _gridPosition = string.Empty;
+
+    [ObservableProperty]
+    private string _hash = string.Empty;
 }

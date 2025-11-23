@@ -15,14 +15,18 @@ namespace TeddyBench.Avalonia.ViewModels;
 public partial class PlayerDialogViewModel : ViewModelBase
 {
     private readonly AudioPlayerService _audioPlayer;
+    private readonly TonieTrackInfoService _trackInfoService;
     private readonly string _tonieFilePath;
+    private readonly string? _tonieHash;
     private readonly Window? _window;
     private TimeSpan? _pendingSeekPosition = null;
 
-    public PlayerDialogViewModel(string tonieFilePath, string displayName, Window? window = null)
+    public PlayerDialogViewModel(string tonieFilePath, string displayName, TonieTrackInfoService trackInfoService, string? tonieHash = null, Window? window = null)
     {
         _tonieFilePath = tonieFilePath;
+        _tonieHash = tonieHash;
         _window = window;
+        _trackInfoService = trackInfoService;
         Title = $"Player for: {displayName}";
 
         _audioPlayer = new AudioPlayerService();
@@ -165,6 +169,11 @@ public partial class PlayerDialogViewModel : ViewModelBase
     {
         try
         {
+            // Ensure track info is saved to customTonies.json (for metadata display elsewhere)
+            // This reads the audio, calculates tracks, and caches them if not already cached
+            _trackInfoService.EnsureTrackInfo(_tonieFilePath, _tonieHash);
+
+            // Read audio again for playback positions (we need granule positions for seeking)
             var tonie = TonieAudio.FromFile(_tonieFilePath, readAudio: true);
             var positions = tonie.ParsePositions();
 

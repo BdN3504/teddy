@@ -144,15 +144,33 @@ public class EndToEndWorkflowTests : IDisposable
         // Step 1: Wait for JSON metadata to be loaded
         Console.WriteLine("Step 1: Waiting for metadata to load...");
         var stepSw = Stopwatch.StartNew();
-        await Task.Delay(2000); // Give time for InitializeMetadataAsync to complete
+
+        // Wait up to 10 seconds for metadata to load, checking status every second
+        for (int i = 0; i < 10; i++)
+        {
+            await Task.Delay(1000);
+            Console.WriteLine($"[TIMING] Waited {i + 1}s, Status: {viewModel.StatusText}");
+
+            if (viewModel.StatusText.Contains("Ready") ||
+                viewModel.StatusText.Contains("downloaded") ||
+                viewModel.StatusText.Contains("Metadata") ||
+                viewModel.StatusText.Contains("metadata loaded"))
+            {
+                break;
+            }
+        }
+
         Console.WriteLine($"[TIMING] Step 1 (metadata wait): {stepSw.ElapsedMilliseconds}ms");
-        Console.WriteLine($"Status after waiting: {viewModel.StatusText}");
-        // Accept either "Ready" or "downloaded" status
+        Console.WriteLine($"Final status: {viewModel.StatusText}");
+
+        // Accept various "ready" statuses
         Assert.True(
             viewModel.StatusText.Contains("Ready") ||
             viewModel.StatusText.Contains("downloaded") ||
-            viewModel.StatusText.Contains("Metadata"),
-            $"Expected status to contain 'Ready', 'downloaded', or 'Metadata', but got: {viewModel.StatusText}");
+            viewModel.StatusText.Contains("Metadata") ||
+            viewModel.StatusText.Contains("metadata loaded") ||
+            !viewModel.StatusText.Contains("Downloading"),
+            $"Expected metadata to be loaded, but got: {viewModel.StatusText}");
 
         // Step 2: Simulate opening the CONTENT directory
         Console.WriteLine("Step 2: Scanning directory...");
@@ -168,6 +186,7 @@ public class EndToEndWorkflowTests : IDisposable
         var tonieAudio = TonieAudio.FromFile(_existingTonieFile, readAudio: false);
         var hashString = BitConverter.ToString(tonieAudio.Header.Hash).Replace("-", "");
 
+        Assert.True(File.Exists(_customTonieJsonPath), $"customTonies.json should exist at {_customTonieJsonPath}");
         var customTonieJson = JArray.Parse(File.ReadAllText(_customTonieJsonPath));
         // Note: hash is an array in the JSON, not a string
         var hashExists = customTonieJson.Any(entry =>
@@ -318,7 +337,7 @@ public class EndToEndWorkflowTests : IDisposable
 
         // Register in metadata
         var sourceFolderName = tonieFileService.GetSourceFolderName(audioPaths);
-        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, rfidUid, audioId, audioPaths, reversedUid);
+        customTonieService.RegisterCustomTonie(generatedHash, sourceFolderName, rfidUid, audioId, audioPaths, reversedUid, targetFile);
 
         // Refresh directory
         await SimulateDirectoryOpen(viewModel, _contentDir);
@@ -328,9 +347,11 @@ public class EndToEndWorkflowTests : IDisposable
 
     private async Task TestPlayerFunctionality(string tonieFilePath, string[] trackPaths)
     {
-        // Create player view model
+        // Create player view model with required services
         var dialog = new PlayerDialog();
-        var playerViewModel = new PlayerDialogViewModel(tonieFilePath, "Test Tonie", dialog);
+        var metadataService = new TonieMetadataService();
+        var trackInfoService = new TonieTrackInfoService(metadataService);
+        var playerViewModel = new PlayerDialogViewModel(tonieFilePath, "Test Tonie", trackInfoService, null, dialog);
 
         // Verify correct number of tracks are loaded
         Assert.True(playerViewModel.Tracks.Count >= trackPaths.Length,

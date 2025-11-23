@@ -86,7 +86,8 @@ namespace TeddyBench.Avalonia.Services
 
                 // Get metadata
                 var hash = BitConverter.ToString(tonie.Header.Hash).Replace("-", "");
-                var (title, imagePath, isCustom) = _metadataService.GetTonieInfo(hash);
+                var audioId = tonie.Header.AudioId;
+                var (title, imagePath, isCustom) = _metadataService.GetTonieInfo(hash, rfidFolder: null, audioId);
 
                 // Get directory from customTonies.json metadata if available
                 // The Toniebox uses an internal UID for TRASHCAN that's different from the RFID tag UID
@@ -163,6 +164,71 @@ namespace TeddyBench.Avalonia.Services
         }
 
         /// <summary>
+        /// Checks if a hash already exists in CONTENT and returns the existing file's location.
+        /// Scans all files in CONTENT directory to find matching hash.
+        /// </summary>
+        /// <param name="hash">The hash to check</param>
+        /// <param name="sdCardPath">Path to the SD card root</param>
+        /// <returns>Tuple of (exists, rfidUid, filePath) - rfidUid and filePath are null if not found</returns>
+        public (bool exists, string? rfidUid, string? filePath) CheckHashConflict(string hash, string sdCardPath)
+        {
+            hash = hash.ToUpperInvariant();
+
+            // First try customTonies.json (fast path)
+            var metadata = _metadataService.GetCustomTonieMetadata(hash);
+            if (metadata != null && !string.IsNullOrEmpty(metadata.Directory))
+            {
+                // Check if the file physically exists at the stored directory
+                var contentPath = Path.Combine(sdCardPath, "CONTENT", metadata.Directory);
+                var filePath = Path.Combine(contentPath, "500304E0");
+
+                if (File.Exists(filePath))
+                {
+                    // File exists - extract RFID from directory (reverse byte order)
+                    var rfidUid = ReverseByteOrder(metadata.Directory);
+                    return (true, rfidUid, filePath);
+                }
+            }
+
+            // Fallback: Scan all files in CONTENT directory to find matching hash
+            // This handles cases where file exists but not in customTonies.json yet
+            var contentDir = Path.Combine(sdCardPath, "CONTENT");
+            if (!Directory.Exists(contentDir))
+            {
+                return (false, null, null);
+            }
+
+            foreach (var rfidDir in Directory.GetDirectories(contentDir))
+            {
+                var tonieFile = Path.Combine(rfidDir, "500304E0");
+                if (File.Exists(tonieFile))
+                {
+                    try
+                    {
+                        // Read just the header to get the hash
+                        var tonie = TonieAudio.FromFile(tonieFile, false);
+                        var fileHash = BitConverter.ToString(tonie.Header.Hash).Replace("-", "").ToUpperInvariant();
+
+                        if (fileHash == hash)
+                        {
+                            // Found matching hash - extract RFID from directory name
+                            var dirName = Path.GetFileName(rfidDir);
+                            var rfidUid = ReverseByteOrder(dirName);
+                            return (true, rfidUid, tonieFile);
+                        }
+                    }
+                    catch
+                    {
+                        // Skip files we can't read
+                        continue;
+                    }
+                }
+            }
+
+            return (false, null, null);
+        }
+
+        /// <summary>
         /// Restores a deleted Tonie from TRASHCAN back to CONTENT.
         /// </summary>
         /// <param name="deletedTonie">The deleted Tonie to restore</param>
@@ -173,17 +239,27 @@ namespace TeddyBench.Avalonia.Services
         {
             try
             {
+                // FIRST: Check for hash conflict (same audio content already exists)
+                var (hashExists, existingRfid, existingFilePath) = CheckHashConflict(deletedTonie.Hash, sdCardPath);
+                if (hashExists && existingFilePath != null && existingRfid != null)
+                {
+                    // Hash conflict: Same audio content exists somewhere
+                    // Always show hash conflict dialog, even if it's at the same location
+                    // Reason: User might have manually placed a file there and wants options
+                    return (false, $"HASH_CONFLICT:{existingRfid}");
+                }
+
                 // Calculate the reversed UID for the directory name
-                var reversedUid = ReverseByteOrder(deletedTonie.Uid);
+                var reversedUid2 = ReverseByteOrder(deletedTonie.Uid);
 
                 // Create target directory path
-                var contentPath = Path.Combine(sdCardPath, "CONTENT", reversedUid);
+                var contentPath = Path.Combine(sdCardPath, "CONTENT", reversedUid2);
                 var targetFilePath = Path.Combine(contentPath, "500304E0");
 
-                // Check if target already exists
+                // Check if target already exists (file path conflict, not hash conflict)
                 if (File.Exists(targetFilePath) && !allowOverwrite)
                 {
-                    return (false, $"CONFLICT:{reversedUid}");
+                    return (false, $"CONFLICT:{reversedUid2}");
                 }
 
                 // Create directory if it doesn't exist
@@ -222,11 +298,104 @@ namespace TeddyBench.Avalonia.Services
                     }
                 }
 
-                return (true, $"Successfully restored to {reversedUid}/500304E0");
+                // Delete from TRASHCAN after successful restoration
+                try
+                {
+                    File.Delete(deletedTonie.FilePath);
+
+                    // Try to remove empty directory
+                    var trashcanDir = Path.GetDirectoryName(deletedTonie.FilePath);
+                    if (trashcanDir != null && Directory.Exists(trashcanDir))
+                    {
+                        var remainingFiles = Directory.GetFiles(trashcanDir);
+                        if (remainingFiles.Length == 0)
+                        {
+                            Directory.Delete(trashcanDir);
+                        }
+                    }
+                }
+                catch
+                {
+                    // If deletion fails, don't fail the whole restoration
+                    // The file was successfully restored, deletion is just cleanup
+                }
+
+                return (true, $"Successfully restored to {reversedUid2}/500304E0");
             }
             catch (Exception ex)
             {
                 return (false, $"Failed to restore: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Moves a Tonie file from one RFID location to another.
+        /// Updates the directory field in customTonies.json.
+        /// </summary>
+        /// <param name="hash">The hash of the Tonie to move</param>
+        /// <param name="oldRfidUid">Current RFID UID (user format, e.g., "0EED4242")</param>
+        /// <param name="newRfidUid">New RFID UID (user format, e.g., "0EED5151")</param>
+        /// <param name="sdCardPath">Path to the SD card root</param>
+        /// <returns>Success status and message</returns>
+        public async Task<(bool success, string message)> MoveTonieToNewRfidAsync(
+            string hash, string oldRfidUid, string newRfidUid, string sdCardPath)
+        {
+            try
+            {
+                // Convert UIDs to directory format (reversed byte order)
+                var oldReversedUid = ReverseByteOrder(oldRfidUid);
+                var newReversedUid = ReverseByteOrder(newRfidUid);
+
+                // Build paths
+                var oldPath = Path.Combine(sdCardPath, "CONTENT", oldReversedUid, "500304E0");
+                var newDirPath = Path.Combine(sdCardPath, "CONTENT", newReversedUid);
+                var newPath = Path.Combine(newDirPath, "500304E0");
+
+                // Verify source file exists
+                if (!File.Exists(oldPath))
+                {
+                    return (false, $"Source file not found at {oldReversedUid}/500304E0");
+                }
+
+                // Check if target already exists
+                if (File.Exists(newPath))
+                {
+                    return (false, $"Target location {newReversedUid}/500304E0 already exists");
+                }
+
+                // Create target directory
+                if (!Directory.Exists(newDirPath))
+                {
+                    Directory.CreateDirectory(newDirPath);
+                }
+
+                // Move the file
+                await Task.Run(() => File.Move(oldPath, newPath));
+
+                // Try to remove old empty directory
+                var oldDirPath = Path.Combine(sdCardPath, "CONTENT", oldReversedUid);
+                if (Directory.Exists(oldDirPath))
+                {
+                    var remainingFiles = Directory.GetFiles(oldDirPath);
+                    if (remainingFiles.Length == 0)
+                    {
+                        Directory.Delete(oldDirPath);
+                    }
+                }
+
+                // Update customTonies.json to point to new directory
+                var metadata = _metadataService.GetCustomTonieMetadata(hash);
+                if (metadata != null)
+                {
+                    metadata.Directory = newReversedUid;
+                    _metadataService.UpdateCustomTonie(hash, metadata);
+                }
+
+                return (true, $"Successfully moved to {newReversedUid}/500304E0");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Failed to move file: {ex.Message}");
             }
         }
 

@@ -139,7 +139,7 @@ namespace TeddyBench.Avalonia.Services
             return newFormat;
         }
 
-        public (string title, string? imagePath, bool isCustom) GetTonieInfo(string hash, string? rfidFolder = null)
+        public (string title, string? imagePath, bool isCustom) GetTonieInfo(string hash, string? rfidFolder = null, uint? audioId = null, List<string>? tracks = null)
         {
             hash = hash.ToUpperInvariant();
 
@@ -149,6 +149,27 @@ namespace TeddyBench.Avalonia.Services
 
             if (customTonie != null)
             {
+                // Update existing entry with new metadata if missing
+                bool needsUpdate = false;
+
+                if (audioId.HasValue && (customTonie.AudioId == null || customTonie.AudioId.Count == 0))
+                {
+                    customTonie.AudioId = new List<string> { audioId.Value.ToString() };
+                    needsUpdate = true;
+                }
+
+                if (tracks != null && tracks.Count > 0 && (customTonie.Tracks == null || customTonie.Tracks.Count == 0))
+                {
+                    customTonie.Tracks = tracks;
+                    needsUpdate = true;
+                }
+
+                if (needsUpdate)
+                {
+                    _customToniesModified = true;
+                    SaveCustomTonies();
+                }
+
                 var title = !string.IsNullOrEmpty(customTonie.Title) ? customTonie.Title : customTonie.Series;
                 return (title, GetCachedImage(hash), true);
             }
@@ -168,7 +189,7 @@ namespace TeddyBench.Avalonia.Services
             var customTitle = !string.IsNullOrEmpty(rfidFolder)
                 ? $"Custom Tonie [RFID: {ReverseByteOrder(rfidFolder)}]"
                 : $"Custom Tonie [{hash.Substring(0, 8)}]";
-            AddCustomTonie(hash, customTitle);
+            AddCustomTonie(hash, customTitle, audioId, tracks, rfidFolder);
             return (customTitle, null, true);
         }
 
