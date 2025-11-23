@@ -2,7 +2,7 @@
 description: Build and deploy Linux GUI to Downloads (preserves customTonies.json)
 ---
 
-Build the Linux x64 GUI release and deploy it to /home/david/Downloads/teddybench-v1.7.0-linux-x64/, preserving the existing customTonies.json file.
+Build the Linux x64 GUI release and deploy it to ~/Downloads/teddybench-v1.7.0-linux-x64/, preserving the existing customTonies.json file.
 
 Steps:
 1. Backup customTonies.json if it exists
