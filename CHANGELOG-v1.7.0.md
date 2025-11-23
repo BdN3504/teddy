@@ -90,12 +90,13 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
 - **TonieAudio.UpdateFileContent()**: New method to update file content when header is modified (enables Audio ID restoration)
 
 ### Bug Fixes
-- **Fixed critical bug: Audio ID was incorrectly affecting file hash** ⚠️ IMPORTANT
-  - Audio ID (timestamp) was being used as Ogg logical stream ID, causing identical audio to produce different hashes
-  - Hardware evidence: Toniebox updates Audio ID but keeps hash unchanged when deleting files
-  - Now uses constant stream ID (1) instead of audioId in OpusOggWriteStream
-  - Same audio source now always produces same hash, matching hardware behavior
-  - Fixes hash collision issues in customTonies.json and enables proper TRASHCAN recovery
+- **Fixed critical Audio ID and hash generation behavior** ⚠️ IMPORTANT
+  - Audio ID (timestamp) is now correctly used as Ogg logical stream serial number for hardware compatibility
+  - Toniebox hardware expects Stream Serial == Audio ID in the Ogg stream
+  - Different Audio IDs now produce different hashes (expected behavior for different files)
+  - Same audio source with same Audio ID produces identical hash (deterministic and reproducible)
+  - This matches actual hardware behavior and ensures proper file identification
+  - Enhanced test coverage to verify audio ID uniqueness and hash determinism
 - **Fixed hash validation error** when clicking "Show Info" on Tonie files
 - **Fixed extended Info display** - improved layout and formatting of detailed file information
 - **Fixed sorting dropdown alignment** - now properly right-aligned in UI

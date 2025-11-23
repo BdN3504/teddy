@@ -1186,9 +1186,10 @@ namespace TonieFile
                 tags.Fields["encoder_options"] = "--quiet --bitrate 96 --vbr";
                 tags.Fields["pad"] = new string('0', 0x138);
 
-                // Use constant stream ID (1) so that identical audio produces identical hash
-                // The audioId is stored separately in the header and should not affect the audio stream
-                OpusOggWriteStream oggOut = new OpusOggWriteStream(encoder, outputData, tags, samplingRate, 1);
+                // Use audioId as stream ID for hardware compatibility
+                // Toniebox hardware expects Stream Serial == Audio ID
+                // This means different audio IDs will produce different hashes (expected behavior)
+                OpusOggWriteStream oggOut = new OpusOggWriteStream(encoder, outputData, tags, samplingRate, (int)audioId);
 
                 uint lastIndex = 0;
                 int track = 0;

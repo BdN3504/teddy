@@ -445,16 +445,19 @@ namespace TonieAudio.Tests
         }
 
         [Fact]
-        public void CreateMultipleTonies_WithoutExplicitAudioId_ShouldHaveUniqueAudioIds()
+        public void CreateMultipleTonies_WithoutExplicitAudioId_ShouldHaveUniqueAudioIdsAndHashes()
         {
-            // This test verifies that each Tonie gets a unique Audio ID based on timestamp
-            // when no explicit Audio ID is provided.
+            // This test verifies that:
+            // 1. Each Tonie gets a unique Audio ID based on timestamp when not specified
+            // 2. Different Audio IDs produce different hashes (stream serial = audio ID for hardware compatibility)
+            // 3. Same Audio ID produces same hash (deterministic)
 
             // Arrange
             string track1 = Path.Combine(_testDataDir, "track1.mp3");
 
             string tonieFile1 = Path.Combine(Path.GetTempPath(), $"test_unique_id_1_{Guid.NewGuid()}.bin");
             string tonieFile2 = Path.Combine(Path.GetTempPath(), $"test_unique_id_2_{Guid.NewGuid()}.bin");
+            string tonieFile3 = Path.Combine(Path.GetTempPath(), $"test_same_id_3_{Guid.NewGuid()}.bin");
 
             try
             {
@@ -471,7 +474,9 @@ namespace TonieAudio.Tests
 
                 File.WriteAllBytes(tonieFile1, tonie1.FileContent);
                 uint audioId1 = tonie1.Header.AudioId;
+                string hash1 = BitConverter.ToString(tonie1.Header.Hash).Replace("-", "");
                 Console.WriteLine($"First tonie Audio ID: 0x{audioId1:X8}");
+                Console.WriteLine($"First tonie Hash: {hash1}");
 
                 // Wait a moment to ensure different timestamps
                 System.Threading.Thread.Sleep(1500);
@@ -489,7 +494,9 @@ namespace TonieAudio.Tests
 
                 File.WriteAllBytes(tonieFile2, tonie2.FileContent);
                 uint audioId2 = tonie2.Header.AudioId;
+                string hash2 = BitConverter.ToString(tonie2.Header.Hash).Replace("-", "");
                 Console.WriteLine($"Second tonie Audio ID: 0x{audioId2:X8}");
+                Console.WriteLine($"Second tonie Hash: {hash2}");
 
                 // Assert: Audio IDs should be different
                 Assert.NotEqual(audioId1, audioId2);
@@ -501,21 +508,55 @@ namespace TonieAudio.Tests
                 Assert.True(timeDifference >= 1 && timeDifference <= 3,
                     $"Audio IDs should be ~1-2 seconds apart, got {timeDifference} seconds");
 
-                // Verify both files are valid
+                // Assert: Different audio IDs produce DIFFERENT hashes (stream serial = audio ID)
+                Assert.NotEqual(hash1, hash2);
+                Console.WriteLine($"✓ Different audio IDs produce different hashes (hardware compatibility)");
+                Console.WriteLine($"  Hash1: {hash1}");
+                Console.WriteLine($"  Hash2: {hash2}");
+
+                // Act: Create third tonie with SAME audio ID as first tonie
+                Console.WriteLine("\n=== Creating third tonie with explicit audio ID (same as first) ===");
+                TonieFile.TonieAudio tonie3 = new TonieFile.TonieAudio(
+                    new[] { track1 },
+                    audioId: audioId1,  // Use same audio ID as first tonie
+                    bitRate: 96000,
+                    useVbr: false,
+                    prefixLocation: null,
+                    cbr: null
+                );
+
+                File.WriteAllBytes(tonieFile3, tonie3.FileContent);
+                uint audioId3 = tonie3.Header.AudioId;
+                string hash3 = BitConverter.ToString(tonie3.Header.Hash).Replace("-", "");
+                Console.WriteLine($"Third tonie Audio ID: 0x{audioId3:X8}");
+                Console.WriteLine($"Third tonie Hash: {hash3}");
+
+                // Assert: Same audio ID produces SAME hash (deterministic)
+                Assert.Equal(audioId1, audioId3);
+                Assert.Equal(hash1, hash3);
+                Console.WriteLine($"\n✓ Same audio + same audio ID = same hash (deterministic)");
+
+                // Verify all files are valid
                 var readBack1 = TonieFile.TonieAudio.FromFile(tonieFile1, readAudio: true);
                 var readBack2 = TonieFile.TonieAudio.FromFile(tonieFile2, readAudio: true);
+                var readBack3 = TonieFile.TonieAudio.FromFile(tonieFile3, readAudio: true);
 
                 Assert.True(readBack1.HashCorrect, "First tonie should have correct hash");
                 Assert.True(readBack2.HashCorrect, "Second tonie should have correct hash");
+                Assert.True(readBack3.HashCorrect, "Third tonie should have correct hash");
                 Assert.Equal(audioId1, readBack1.Header.AudioId);
                 Assert.Equal(audioId2, readBack2.Header.AudioId);
+                Assert.Equal(audioId3, readBack3.Header.AudioId);
 
-                Console.WriteLine("\n✓ Both tonies are valid and have unique Audio IDs");
+                Console.WriteLine("\n✓ All tonies are valid with correct behavior:");
+                Console.WriteLine("  - Different timestamps = different audio IDs = different hashes");
+                Console.WriteLine("  - Same audio ID = same hash (works with hardware)");
             }
             finally
             {
                 if (File.Exists(tonieFile1)) File.Delete(tonieFile1);
                 if (File.Exists(tonieFile2)) File.Delete(tonieFile2);
+                if (File.Exists(tonieFile3)) File.Delete(tonieFile3);
             }
         }
 
