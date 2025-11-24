@@ -407,7 +407,7 @@ public class SearchFunctionalityTests : IDisposable
             {
                 ["no"] = customTonies.Count.ToString(),
                 ["model"] = "",
-                ["audio_id"] = new JArray { audioId.ToString("X8") },
+                ["audio_id"] = new JArray { audioId.ToString() },
                 ["hash"] = new JArray { generatedHash },
                 ["title"] = titleWithRfid,
                 ["series"] = title,

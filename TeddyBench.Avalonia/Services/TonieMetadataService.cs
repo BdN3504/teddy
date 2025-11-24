@@ -139,6 +139,17 @@ namespace TeddyBench.Avalonia.Services
             return newFormat;
         }
 
+        /// <summary>
+        /// Gets a tonie from the official tonies.json database by hash.
+        /// Returns null if not found (meaning it's a custom tonie).
+        /// </summary>
+        public TonieMetadata? GetTonieByHash(string hash)
+        {
+            hash = hash.ToUpperInvariant();
+            return _toniesDb.FirstOrDefault(t =>
+                t.Hash != null && t.Hash.Any(h => h.Equals(hash, StringComparison.OrdinalIgnoreCase)));
+        }
+
         public (string title, string? imagePath, bool isCustom) GetTonieInfo(string hash, string? rfidFolder = null, uint? audioId = null, List<string>? tracks = null)
         {
             hash = hash.ToUpperInvariant();

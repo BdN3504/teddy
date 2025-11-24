@@ -278,7 +278,7 @@ public class AssignNewUidTests : IDisposable
             {
                 ["no"] = "0",
                 ["model"] = "",
-                ["audio_id"] = new JArray { audioId.ToString("X8") },
+                ["audio_id"] = new JArray { audioId.ToString() },
                 ["hash"] = new JArray { generatedHash },
                 ["title"] = "Custom Title Without RFID",
                 ["series"] = "Custom Title Without RFID",

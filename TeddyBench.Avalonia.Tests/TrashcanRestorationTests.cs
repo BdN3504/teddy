@@ -100,7 +100,7 @@ public class TrashcanRestorationTests : IDisposable
                 ["hash"] = new JArray { contentHash },
                 ["title"] = $"Test Album [RFID: {rfidUid}]",
                 ["directory"] = reversedUid,
-                ["audio_id"] = new JArray { originalAudioId.ToString("X8") },
+                ["audio_id"] = new JArray { originalAudioId.ToString() },
                 ["tracks"] = new JArray { "Track 1", "Track 2" }
             }
         };
@@ -426,7 +426,7 @@ public class TrashcanRestorationTests : IDisposable
                 ["hash"] = new JArray { deletedHash }, // Use deleted hash (current hash in TRASHCAN)
                 ["title"] = $"Deleted Album [RFID: {rfidUid}]",
                 ["directory"] = fakeDirectory, // Different directory = no hash conflict
-                ["audio_id"] = new JArray { expectedAudioId.ToString("X8") }, // Original audio ID to restore
+                ["audio_id"] = new JArray { expectedAudioId.ToString() }, // Original audio ID to restore
                 ["tracks"] = new JArray { "Track 1" }
             }
         };

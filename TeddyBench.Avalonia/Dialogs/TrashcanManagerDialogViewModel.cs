@@ -143,8 +143,13 @@ public partial class TrashcanManagerDialogViewModel : ObservableObject
             }
             else
             {
+                // Check if metadata is missing (original Audio ID unknown)
+                if (message == "MISSING_METADATA")
+                {
+                    await HandleMissingMetadataAsync();
+                }
                 // Check if it's a hash conflict (same audio content exists elsewhere)
-                if (message.StartsWith("HASH_CONFLICT:"))
+                else if (message.StartsWith("HASH_CONFLICT:"))
                 {
                     var existingUid = message.Substring("HASH_CONFLICT:".Length);
                     await HandleHashConflictAsync(existingUid);
@@ -229,6 +234,72 @@ public partial class TrashcanManagerDialogViewModel : ObservableObject
             default:
                 StatusText = "Restore cancelled";
                 break;
+        }
+    }
+
+    private async Task HandleMissingMetadataAsync()
+    {
+        if (SelectedTonie == null)
+        {
+            return;
+        }
+
+        // Show restore dialog to get RFID, title, and Audio ID
+        var restoreDialog = new RestoreAsNewCustomTonieDialog
+        {
+            DataContext = new RestoreAsNewCustomTonieDialogViewModel(_window, SelectedTonie.DisplayName)
+        };
+
+        await restoreDialog.ShowDialog(_window);
+
+        var viewModel = (RestoreAsNewCustomTonieDialogViewModel)restoreDialog.DataContext;
+        if (!viewModel.DialogResult)
+        {
+            StatusText = "Restore cancelled";
+            return;
+        }
+
+        // Get user input
+        var rfidUid = viewModel.RfidUid;
+        var customTitle = string.IsNullOrWhiteSpace(viewModel.CustomTitle) ? null : viewModel.CustomTitle;
+        var audioId = viewModel.GetAudioId();
+
+        IsLoading = true;
+        StatusText = $"Restoring {SelectedTonie.DisplayName} as new custom Tonie...";
+
+        try
+        {
+            var (success, message) = await _trashcanService.RestoreAsNewCustomTonieAsync(
+                SelectedTonie,
+                _sdCardPath,
+                rfidUid,
+                customTitle,
+                audioId
+            );
+
+            if (success)
+            {
+                StatusText = message;
+
+                // Remove from list
+                DeletedTonies.Remove(SelectedTonie);
+                HasDeletedTonies = DeletedTonies.Count > 0;
+
+                // Set dialog result to indicate changes were made
+                DialogResult = true;
+            }
+            else
+            {
+                StatusText = $"Failed to restore: {message}";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error during restore: {ex.Message}";
+        }
+        finally
+        {
+            IsLoading = false;
         }
     }
 

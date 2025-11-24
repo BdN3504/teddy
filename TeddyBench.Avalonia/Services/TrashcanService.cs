@@ -11,6 +11,8 @@ namespace TeddyBench.Avalonia.Services
     public class TrashcanService
     {
         private readonly TonieMetadataService _metadataService;
+        private static uint _lastGeneratedTimestamp = 0;
+        private static readonly object _timestampLock = new object();
 
         public TrashcanService(TonieMetadataService metadataService)
         {
@@ -239,7 +241,32 @@ namespace TeddyBench.Avalonia.Services
         {
             try
             {
-                // FIRST: Check for hash conflict (same audio content already exists)
+                // FIRST: Check if we know where to restore this file
+                if (deletedTonie.Uid == "Unknown")
+                {
+                    // We don't know the RFID directory, need user input
+                    return (false, "MISSING_METADATA");
+                }
+
+                // SECOND: Determine if this is a custom tonie that needs re-encoding
+                // Strategy: Check if hash exists in tonies.json (official database)
+                var officialTonie = _metadataService.GetTonieByHash(deletedTonie.Hash);
+                bool isOfficialTonie = officialTonie != null;
+
+                // For custom tonies, check if we have the original Audio ID
+                if (!isOfficialTonie)
+                {
+                    var metadata = _metadataService.GetCustomTonieMetadata(deletedTonie.Hash);
+                    bool hasOriginalAudioId = metadata != null && metadata.AudioId != null && metadata.AudioId.Count > 0;
+
+                    // If it's not official and we don't have the Audio ID, we need to re-encode
+                    if (!hasOriginalAudioId)
+                    {
+                        return (false, "MISSING_METADATA");
+                    }
+                }
+
+                // THIRD: Check for hash conflict (same audio content already exists)
                 var (hashExists, existingRfid, existingFilePath) = CheckHashConflict(deletedTonie.Hash, sdCardPath);
                 if (hashExists && existingFilePath != null && existingRfid != null)
                 {
@@ -275,13 +302,22 @@ namespace TeddyBench.Avalonia.Services
                 // Restore original Audio ID if it's a custom tonie
                 if (deletedTonie.IsCustomTonie)
                 {
-                    // Get metadata from customTonies.json
-                    var metadata = _metadataService.GetCustomTonieMetadata(deletedTonie.Hash);
+                    // Get metadata from customTonies.json (use different variable name to avoid conflict)
+                    var tonieMetadata = _metadataService.GetCustomTonieMetadata(deletedTonie.Hash);
 
-                    if (metadata != null && metadata.AudioId != null && metadata.AudioId.Count > 0)
+                    if (tonieMetadata != null && tonieMetadata.AudioId != null && tonieMetadata.AudioId.Count > 0)
                     {
                         // Parse the original Audio ID from customTonies.json
-                        if (uint.TryParse(metadata.AudioId[0], System.Globalization.NumberStyles.HexNumber, null, out uint originalAudioId))
+                        // Try decimal first (current format), then hex (legacy format)
+                        uint originalAudioId;
+                        bool parsed = uint.TryParse(tonieMetadata.AudioId[0], out originalAudioId);
+                        if (!parsed)
+                        {
+                            // Try parsing as hex (legacy format from older versions)
+                            parsed = uint.TryParse(tonieMetadata.AudioId[0], System.Globalization.NumberStyles.HexNumber, null, out originalAudioId);
+                        }
+
+                        if (parsed)
                         {
                             // Read the restored file
                             var restoredTonie = TonieAudio.FromFile(targetFilePath, readAudio: true);
@@ -396,6 +432,151 @@ namespace TeddyBench.Avalonia.Services
             catch (Exception ex)
             {
                 return (false, $"Failed to move file: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Restores a deleted Tonie by updating its Audio ID without re-encoding.
+        /// This preserves the original audio encoding and produces deterministic hashes.
+        /// Used when the original Audio ID is unknown (e.g., from another user's SD card).
+        /// </summary>
+        /// <param name="deletedTonie">The deleted Tonie to restore</param>
+        /// <param name="sdCardPath">Path to the SD card root</param>
+        /// <param name="newRfidUid">New RFID UID (user format)</param>
+        /// <param name="customTitle">Optional custom title for customTonies.json</param>
+        /// <param name="audioId">Optional Audio ID (if null, generates from timestamp - 0x50000000)</param>
+        /// <returns>Success status and message</returns>
+        public async Task<(bool success, string message)> RestoreAsNewCustomTonieAsync(
+            DeletedTonieItem deletedTonie,
+            string sdCardPath,
+            string newRfidUid,
+            string? customTitle = null,
+            uint? audioId = null)
+        {
+            try
+            {
+                // Generate Audio ID if not provided (custom tonie format: timestamp - 0x50000000)
+                // Use a lock and counter to ensure uniqueness when multiple calls happen in the same second
+                uint finalAudioId;
+                if (audioId.HasValue)
+                {
+                    finalAudioId = audioId.Value;
+                }
+                else
+                {
+                    lock (_timestampLock)
+                    {
+                        uint currentTimestamp = (uint)(DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 0x50000000);
+
+                        // Ensure we never generate the same timestamp twice
+                        if (currentTimestamp <= _lastGeneratedTimestamp)
+                        {
+                            // If current timestamp is same or earlier, increment by 1
+                            finalAudioId = _lastGeneratedTimestamp + 1;
+                        }
+                        else
+                        {
+                            finalAudioId = currentTimestamp;
+                        }
+
+                        _lastGeneratedTimestamp = finalAudioId;
+                    }
+                }
+
+                // Calculate reversed UID for directory name
+                var reversedUid = ReverseByteOrder(newRfidUid);
+
+                // Create target directory path
+                var contentPath = Path.Combine(sdCardPath, "CONTENT", reversedUid);
+                var targetFilePath = Path.Combine(contentPath, "500304E0");
+
+                // Check if target already exists
+                if (File.Exists(targetFilePath))
+                {
+                    return (false, $"Target location {reversedUid}/500304E0 already exists");
+                }
+
+                // Create directory if it doesn't exist
+                if (!Directory.Exists(contentPath))
+                {
+                    Directory.CreateDirectory(contentPath);
+                }
+
+                // Load the original Tonie file from TRASHCAN with audio data
+                var originalTonie = await Task.Run(() => TonieAudio.FromFile(deletedTonie.FilePath, readAudio: true));
+
+                // Update the stream serial number (Audio ID) in the audio data without re-encoding
+                // This preserves the exact audio encoding, making hashes deterministic
+                byte[] updatedAudioData = await Task.Run(() => originalTonie.UpdateStreamSerialNumber(finalAudioId));
+
+                // Create a new TonieAudio with the updated audio data
+                var newTonie = new TonieAudio();
+                newTonie.Audio = updatedAudioData;
+                newTonie.Header.AudioLength = updatedAudioData.Length;
+                newTonie.Header.AudioId = finalAudioId;
+                newTonie.Header.AudioChapters = originalTonie.Header.AudioChapters;
+
+                // Compute hash of the updated audio data
+                using var sha1 = System.Security.Cryptography.SHA1.Create();
+                newTonie.Header.Hash = sha1.ComputeHash(updatedAudioData);
+
+                // Build the file content (header + audio)
+                newTonie.FileContent = new byte[updatedAudioData.Length + 0x1000];
+                Array.Copy(updatedAudioData, 0, newTonie.FileContent, 0x1000, updatedAudioData.Length);
+                newTonie.UpdateFileContent();
+
+                // Write the new Tonie file
+                await Task.Run(() => File.WriteAllBytes(targetFilePath, newTonie.FileContent));
+
+                // Calculate hash for customTonies.json
+                var newHash = BitConverter.ToString(newTonie.Header.Hash).Replace("-", "");
+
+                // Determine title for customTonies.json
+                string tonieTitle = customTitle ?? deletedTonie.DisplayName;
+
+                // Add RFID to title if not already present
+                if (!tonieTitle.Contains("[RFID:"))
+                {
+                    tonieTitle = $"{tonieTitle} [RFID: {newRfidUid}]";
+                }
+
+                // Get track names (if available from original file)
+                List<string>? tracks = null;
+                var originalMetadata = _metadataService.GetCustomTonieMetadata(deletedTonie.Hash);
+                if (originalMetadata != null && originalMetadata.Tracks != null && originalMetadata.Tracks.Count > 0)
+                {
+                    tracks = originalMetadata.Tracks;
+                }
+
+                // Register in customTonies.json
+                _metadataService.AddCustomTonie(newHash, tonieTitle, finalAudioId, tracks, reversedUid);
+
+                // Delete from TRASHCAN after successful restoration
+                try
+                {
+                    File.Delete(deletedTonie.FilePath);
+
+                    // Try to remove empty directory
+                    var trashcanDir = Path.GetDirectoryName(deletedTonie.FilePath);
+                    if (trashcanDir != null && Directory.Exists(trashcanDir))
+                    {
+                        var remainingFiles = Directory.GetFiles(trashcanDir);
+                        if (remainingFiles.Length == 0)
+                        {
+                            Directory.Delete(trashcanDir);
+                        }
+                    }
+                }
+                catch
+                {
+                    // If deletion fails, don't fail the whole restoration
+                }
+
+                return (true, $"Successfully restored as new custom Tonie to {reversedUid}/500304E0");
+            }
+            catch (Exception ex)
+            {
+                return (false, $"Failed to restore with updated Audio ID: {ex.Message}");
             }
         }
 

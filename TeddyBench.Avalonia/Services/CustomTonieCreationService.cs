@@ -14,6 +14,8 @@ public class CustomTonieCreationService
 {
     private readonly TonieFileService _tonieFileService;
     private readonly TonieMetadataService _metadataService;
+    private static uint _lastGeneratedTimestamp = 0;
+    private static readonly object _timestampLock = new object();
 
     public CustomTonieCreationService(TonieFileService tonieFileService, TonieMetadataService metadataService)
     {
@@ -78,12 +80,25 @@ public class CustomTonieCreationService
         }
         else
         {
-            // Touch the file first to establish creation timestamp
-            File.WriteAllBytes(targetFile, Array.Empty<byte>());
+            // Generate unique timestamp-based Audio ID
+            // Use a lock and counter to ensure uniqueness when multiple calls happen in the same second
+            lock (_timestampLock)
+            {
+                uint currentTimestamp = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
-            // Get the file creation time as Unix timestamp for Audio ID
-            var fileInfo = new FileInfo(targetFile);
-            finalAudioId = (uint)((DateTimeOffset)fileInfo.CreationTimeUtc).ToUnixTimeSeconds();
+                // Ensure we never generate the same timestamp twice
+                if (currentTimestamp <= _lastGeneratedTimestamp)
+                {
+                    // If current timestamp is same or earlier, increment by 1
+                    finalAudioId = _lastGeneratedTimestamp + 1;
+                }
+                else
+                {
+                    finalAudioId = currentTimestamp;
+                }
+
+                _lastGeneratedTimestamp = finalAudioId;
+            }
         }
 
         // Encode the audio files with the determined Audio ID

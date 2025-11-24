@@ -1667,6 +1667,39 @@ namespace TonieFile
         }
 
         /// <summary>
+        /// Updates the stream serial number (Audio ID) in all Ogg pages without re-encoding.
+        /// This preserves the exact audio encoding and produces deterministic hashes.
+        /// Returns new audio data with updated stream serial number.
+        /// </summary>
+        public byte[] UpdateStreamSerialNumber(uint newAudioId)
+        {
+            // Parse all Ogg pages from the audio data
+            List<OggPage> pages = ParseOggPagesFromBytes(Audio);
+
+            if (pages.Count == 0)
+            {
+                throw new InvalidOperationException("No Ogg pages found in audio data");
+            }
+
+            // Update stream serial number in each page
+            foreach (var page in pages)
+            {
+                page.Header.BitstreamSerialNumber = newAudioId;
+            }
+
+            // Write all pages to a memory stream
+            using (MemoryStream output = new MemoryStream())
+            {
+                foreach (var page in pages)
+                {
+                    page.Write(output);
+                }
+
+                return output.ToArray();
+            }
+        }
+
+        /// <summary>
         /// Extracts tracks to temporary Ogg files by splitting at exact chapter boundaries.
         /// This is simpler and more reliable than manual Ogg stream manipulation.
         /// Uses ffmpeg to split the Ogg stream at precise timestamps derived from granule positions.
