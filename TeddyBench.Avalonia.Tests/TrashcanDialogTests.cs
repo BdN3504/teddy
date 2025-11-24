@@ -6,117 +6,106 @@ using Avalonia.Headless.XUnit;
 using TeddyBench.Avalonia.Services;
 using TeddyBench.Avalonia.ViewModels;
 using TeddyBench.Avalonia.Dialogs;
+using TonieFile;
 using Xunit;
 
 namespace TeddyBench.Avalonia.Tests;
 
 /// <summary>
 /// Tests for TRASHCAN recovery dialog functionality
-/// These tests are NOT headless - they show the actual UI for better debugging
+/// Uses temporary test directories instead of hardcoded SD card paths
 /// </summary>
-public class TrashcanDialogTests
+public class TrashcanDialogTests : IDisposable
 {
-    private const string SD_CARD_PATH = "/media/david/3238-3133";
-    private const string CONTENT_PATH = SD_CARD_PATH + "/CONTENT";
+    private readonly string _testSdCardPath;
+    private readonly string _contentPath;
+    private readonly string _trashcanPath;
+    private readonly string _customTonieJsonPath;
 
-    [AvaloniaFact]
-    public async Task RealUserWorkflow_StartApp_AutoDetectSD_OpenTrashcan()
+    public TrashcanDialogTests()
     {
-        // Skip test if SD card is not mounted
-        if (!Directory.Exists(CONTENT_PATH))
+        // Set up temporary test directory structure
+        _testSdCardPath = Path.Combine(Path.GetTempPath(), $"TeddyBench_Trashcan_Test_{Guid.NewGuid():N}");
+        _contentPath = Path.Combine(_testSdCardPath, "CONTENT");
+        _trashcanPath = Path.Combine(_testSdCardPath, "TRASHCAN");
+
+        Directory.CreateDirectory(_contentPath);
+        Directory.CreateDirectory(_trashcanPath);
+
+        _customTonieJsonPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "customTonies.json");
+
+        // Clean up any existing customTonies.json to start fresh
+        if (File.Exists(_customTonieJsonPath))
         {
-            Console.WriteLine("Skipping test - SD card not found at " + CONTENT_PATH);
-            return;
+            File.Delete(_customTonieJsonPath);
         }
+    }
 
-        Console.WriteLine("=== TRASHCAN REAL USER WORKFLOW TEST ===");
-        Console.WriteLine($"SD Card Path: {SD_CARD_PATH}");
-        Console.WriteLine("This test will show the actual UI");
-        Console.WriteLine();
-
-        // 1. Start the app like a normal user would
-        Console.WriteLine("Step 1: Starting application...");
-        var window = new Views.MainWindow();
-        var viewModel = new MainWindowViewModel(window);
-        window.DataContext = viewModel;
-        window.Show();
-
-        // 2. Wait for auto-detection to run (this is what happens on real startup)
-        Console.WriteLine("Step 2: Waiting for SD card auto-detection...");
-        await viewModel.AutoOpenDirectoryOnStartup();
-
-        // Give it time to scan
-        await Task.Delay(3000);
-
-        // 3. Verify the SD card was detected and loaded
-        Console.WriteLine($"Step 3: Verifying directory loaded... HasValidDirectory={viewModel.HasValidDirectory}");
-        if (!viewModel.HasValidDirectory)
-        {
-            Console.WriteLine("WARNING: Auto-detection did not load the directory");
-            Console.WriteLine($"CurrentDirectory: {viewModel.CurrentDirectory}");
-            window.Close();
-            return; // Skip test if auto-detection didn't work
-        }
-
-        Console.WriteLine($"✓ Loaded {viewModel.TonieFiles.Count} Tonie files from {viewModel.CurrentDirectory}");
-
-        // 4. Click the TRASHCAN Recovery button
-        Console.WriteLine("Step 4: Clicking TRASHCAN Recovery button...");
-
-        Exception? dialogException = null;
+    public void Dispose()
+    {
         try
         {
-            Assert.True(viewModel.OpenTrashcanManagerCommand.CanExecute(null),
-                "OpenTrashcanManagerCommand should be executable");
-
-            await viewModel.OpenTrashcanManagerCommand.ExecuteAsync(null);
-
-            Console.WriteLine("✓ TRASHCAN dialog opened successfully!");
-
-            // Keep the dialog open for a moment so we can see it
-            await Task.Delay(2000);
+            if (Directory.Exists(_testSdCardPath))
+            {
+                Directory.Delete(_testSdCardPath, true);
+            }
         }
-        catch (Exception ex)
+        catch
         {
-            dialogException = ex;
-            Console.WriteLine($"✗ TRASHCAN dialog failed: {ex.Message}");
-            Console.WriteLine($"Stack trace: {ex.StackTrace}");
+            // Ignore cleanup errors
         }
+    }
 
-        // Verify
-        Assert.Null(dialogException);
+    /// <summary>
+    /// Helper method to create a test Tonie file
+    /// </summary>
+    private void CreateTestTonieFile(string directory, string fileName, uint audioId)
+    {
+        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track1.mp3");
 
-        Console.WriteLine("=== TEST COMPLETED SUCCESSFULLY ===");
+        // Create the directory if it doesn't exist
+        Directory.CreateDirectory(directory);
 
-        // Cleanup
-        window.Close();
+        // Create a test Tonie file
+        var tonie = new TonieAudio(
+            sources: new[] { track1Path },
+            audioId: audioId,
+            bitRate: 96000,
+            useVbr: false,
+            prefixLocation: null
+        );
+
+        var filePath = Path.Combine(directory, fileName);
+        File.WriteAllBytes(filePath, tonie.FileContent);
     }
 
     [AvaloniaFact]
-    public async Task TrashcanService_WithRealSdCard_ShouldScanTrashcan()
+    public async Task TrashcanService_WithTestDirectory_ShouldScanTrashcan()
     {
-        // Skip test if SD card is not mounted
-        if (!Directory.Exists(SD_CARD_PATH))
-        {
-            Console.WriteLine("Skipping test - SD card not found");
-            return;
-        }
-
         Console.WriteLine("=== Testing TrashcanService.ScanTrashcanAsync ===");
+
+        // Create test deleted Tonie files in TRASHCAN
+        var trashcanSubDir1 = Path.Combine(_trashcanPath, "DeletedTonie_001");
+        var trashcanSubDir2 = Path.Combine(_trashcanPath, "DeletedTonie_002");
+        CreateTestTonieFile(trashcanSubDir1, "tonie1.043", 0x12345678u);
+        CreateTestTonieFile(trashcanSubDir2, "tonie2.043", 0x87654321u);
+
+        Console.WriteLine($"✓ Created test files in TRASHCAN: {_trashcanPath}");
 
         // Create services
         var metadataService = new TonieMetadataService();
         var trashcanService = new TrashcanService(metadataService);
 
         // Scan TRASHCAN
-        var deletedTonies = await trashcanService.ScanTrashcanAsync(SD_CARD_PATH);
+        var deletedTonies = await trashcanService.ScanTrashcanAsync(_testSdCardPath);
 
-        // Should not throw and should return a list (might be empty if TRASHCAN is clean)
+        // Should not throw and should return a list
         Assert.NotNull(deletedTonies);
+        Assert.Equal(2, deletedTonies.Count);
 
         Console.WriteLine($"Found {deletedTonies.Count} deleted Tonie(s) in TRASHCAN");
 
-        // If there are deleted tonies, verify they have proper data
+        // Verify they have proper data
         foreach (var tonie in deletedTonies)
         {
             Console.WriteLine($"  - {tonie.DisplayName} (UID: {tonie.Uid}, Hash: {tonie.Hash[..8]}...)");
@@ -134,14 +123,13 @@ public class TrashcanDialogTests
     [AvaloniaFact]
     public async Task TrashcanDialog_ViewModel_ShouldInitializeWithoutErrors()
     {
-        // Skip test if SD card is not mounted
-        if (!Directory.Exists(SD_CARD_PATH))
-        {
-            Console.WriteLine("Skipping test - SD card not found");
-            return;
-        }
-
         Console.WriteLine("=== Testing TrashcanManagerDialogViewModel initialization ===");
+
+        // Create test deleted Tonie files in TRASHCAN
+        var trashcanSubDir = Path.Combine(_trashcanPath, "DeletedTonie_001");
+        CreateTestTonieFile(trashcanSubDir, "test.043", 0x11223344u);
+
+        Console.WriteLine($"✓ Created test file in TRASHCAN: {_trashcanPath}");
 
         // Create a test window
         var window = new Window();
@@ -155,7 +143,7 @@ public class TrashcanDialogTests
             var metadataService = new TonieMetadataService();
 
             // Create the ViewModel - this triggers scanning
-            var viewModel = new TrashcanManagerDialogViewModel(window, SD_CARD_PATH, metadataService);
+            var viewModel = new TrashcanManagerDialogViewModel(window, _testSdCardPath, metadataService);
 
             // Wait for async loading
             await Task.Delay(2000);
@@ -198,7 +186,7 @@ public class TrashcanDialogTests
         try
         {
             // Create the RFID input dialog with empty prefix (TRASHCAN restoration scenario)
-            var dialog = new RfidInputDialog("", CONTENT_PATH);
+            var dialog = new RfidInputDialog("", _contentPath);
 
             // Get the ViewModel
             var viewModel = dialog.DataContext as RfidInputDialogViewModel;
