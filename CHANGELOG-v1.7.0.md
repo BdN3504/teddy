@@ -41,6 +41,7 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Configurable RFID prefix (default: 0EED)
   - Automatic title generation from source folder name
   - Custom metadata management via customTonies.json
+  - **Lossless Tonie Modification** - when adding tracks to existing Tonies, the system now uses efficient in-place editing that preserves the original audio encoding without decoding and re-encoding
 
 - **LIVE Flag Management**
   - Visual [LIVE] indicator for flagged files
@@ -95,6 +96,11 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Preserves original Opus encoding quality without generation loss
   - Updates only Ogg container metadata (stream serial) and recalculates CRC checksums
   - Detailed documentation in HASH_DETERMINISM_FIX.md
+- **TonieAudio.ExtractRawChapterData()** and **CombineOggTracksLossless()**: New methods for lossless Tonie modification
+  - Extracts raw Ogg pages without decoding for zero quality loss
+  - Combines tracks with proper 4k boundary alignment
+  - Enables efficient track addition to existing Tonies without re-encoding
+  - Detailed documentation in TONIE_MODIFICATION_FIX.md
 
 ### Bug Fixes
 - **Fixed critical Audio ID and hash generation behavior** ⚠️ IMPORTANT
@@ -111,7 +117,11 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Improved audio ID generation algorithm to ensure uniqueness
   - Added comprehensive test suite to verify audio ID and hash generation specifications
 - **Fixed space bar audio playback** issue where pressing and holding space caused buggy behavior
-- **Fixed modified Tonie playback** to ensure proper re-encoding for compatibility
+- **Fixed Tonie modification workflow** - completely redesigned using lossless approach for efficiency and quality
+  - Original tracks are now preserved without decoding/re-encoding
+  - Proper 4k boundary alignment prevents Ogg page errors
+  - Eliminates red LED flash issue when playing modified Tonies
+  - Comprehensive test coverage in EndToEndWorkflowTests.cs and HybridEncodingTests.cs
 - **Fixed encoding progress dialog** now properly displays during Tonie modification workflow
 - **Fixed TRASHCAN restoration to preserve original Audio ID**
   - Restored Tonies now have identical Audio ID to the original file
