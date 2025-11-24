@@ -57,6 +57,7 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - **Advanced customTonies.json format**: now stores Directory field for reliable restoration without RFID parsing ambiguity
   - **Conflict resolution**: detects and handles conflicts when restoring to occupied directory
   - **UID prompt**: interactive dialog for unknown Tonies during restoration
+  - **Restore as new custom Tonie**: Can restore deleted Tonies even when they have no matching hash entry in customTonies.json or tonies.json - assigns new Audio ID while preserving original audio encoding
   - Accessible via "TRASHCAN Recovery" toolbar button
 
 - **File Operations**
@@ -89,6 +90,11 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Backward compatibility maintained via RFID regex fallback for old entries
   - New format: `[{"No": "0", "Hash": "...", "Title": "...", "Directory": "EA33ED0E", "AudioId": [...], "Tracks": [...]}]`
 - **TonieAudio.UpdateFileContent()**: New method to update file content when header is modified (enables Audio ID restoration)
+- **TonieAudio.UpdateStreamSerialNumber()**: New method to update Ogg stream serial number without re-encoding audio
+  - Enables hash-deterministic TRASHCAN restoration for unknown Tonies
+  - Preserves original Opus encoding quality without generation loss
+  - Updates only Ogg container metadata (stream serial) and recalculates CRC checksums
+  - Detailed documentation in HASH_DETERMINISM_FIX.md
 
 ### Bug Fixes
 - **Fixed critical Audio ID and hash generation behavior** ⚠️ IMPORTANT
