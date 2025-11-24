@@ -41,11 +41,15 @@ public partial class TrackSortDialogViewModel : ObservableObject
         var sortedPaths = SortByFolderThenFilename(audioPaths);
         for (int i = 0; i < sortedPaths.Length; i++)
         {
+            var (artist, title, trackNumberTag) = ReadAudioMetadata(sortedPaths[i]);
             Tracks.Add(new AudioTrackItem
             {
                 TrackNumber = i + 1,
                 FileName = Path.GetFileName(sortedPaths[i]),
-                FilePath = sortedPaths[i]
+                FilePath = sortedPaths[i],
+                Artist = artist,
+                Title = title,
+                TrackNumberTag = trackNumberTag
             });
         }
     }
@@ -195,11 +199,15 @@ public partial class TrackSortDialogViewModel : ObservableObject
                 // Add sorted files to the end of the list
                 foreach (var path in sortedNewPaths)
                 {
+                    var (artist, title, trackNumberTag) = ReadAudioMetadata(path);
                     Tracks.Add(new AudioTrackItem
                     {
                         TrackNumber = Tracks.Count + 1,
                         FileName = Path.GetFileName(path),
-                        FilePath = path
+                        FilePath = path,
+                        Artist = artist,
+                        Title = title,
+                        TrackNumberTag = trackNumberTag
                     });
                 }
 
@@ -341,6 +349,38 @@ public partial class TrackSortDialogViewModel : ObservableObject
         {
             // Failed to sort by metadata - fall back to filename sorting
             return filesInFolder.OrderBy(p => Path.GetFileName(p)).ToArray();
+        }
+    }
+
+    /// <summary>
+    /// Reads artist, title, and track number metadata from an audio file using TagLibSharp.
+    /// Returns (null, null, null) if metadata cannot be read or is empty.
+    /// </summary>
+    private (string? artist, string? title, uint? trackNumber) ReadAudioMetadata(string filePath)
+    {
+        try
+        {
+            // TagLibSharp supports: MP3, FLAC, OGG, M4A, AAC, WMA, WAV, and many more
+            using (var file = TagLib.File.Create(filePath))
+            {
+                var artist = file.Tag.FirstPerformer ?? file.Tag.FirstAlbumArtist;
+                var title = file.Tag.Title;
+                var trackNumber = file.Tag.Track;
+
+                // Return null if strings are empty or whitespace
+                artist = string.IsNullOrWhiteSpace(artist) ? null : artist;
+                title = string.IsNullOrWhiteSpace(title) ? null : title;
+
+                // Return null if track number is 0 (not set)
+                var trackNumberResult = (trackNumber > 0) ? trackNumber : (uint?)null;
+
+                return (artist, title, trackNumberResult);
+            }
+        }
+        catch
+        {
+            // Failed to read metadata - return null values
+            return (null, null, null);
         }
     }
 }
