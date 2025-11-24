@@ -265,8 +265,9 @@ public partial class TrackSortDialogViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Sorts files by folder first (maintaining folder order), then alphabetically by filename within each folder.
-    /// This ensures files from the same folder stay grouped together.
+    /// Sorts files by folder first (maintaining folder order), then by ID3 track number within each folder.
+    /// Falls back to alphabetical filename sorting if ID3 tags are unavailable or invalid.
+    /// This ensures files from the same folder stay grouped together, respecting multi-disc albums.
     /// </summary>
     private string[] SortByFolderThenFilename(string[] paths)
     {
@@ -277,12 +278,69 @@ public partial class TrackSortDialogViewModel : ObservableObject
             {
                 FolderPath = group.Key,
                 OriginalOrder = index, // Preserve the order folders appear in the input
-                Files = group.OrderBy(p => Path.GetFileName(p)).ToList() // Sort files within folder
+                Files = SortFilesInFolder(group.ToArray()) // Sort files within folder using ID3 tags
             })
             .OrderBy(g => g.OriginalOrder) // Maintain folder order
             .SelectMany(g => g.Files) // Flatten back to a single list
             .ToArray();
 
         return groupedByFolder;
+    }
+
+    /// <summary>
+    /// Sorts files within a folder by track number metadata (supports MP3, FLAC, OGG, M4A, AAC, WMA, WAV),
+    /// falling back to filename if metadata is unavailable.
+    /// </summary>
+    private string[] SortFilesInFolder(string[] filesInFolder)
+    {
+        try
+        {
+            // Try to read metadata from all supported audio files
+            var fileTuples = filesInFolder.Select(f =>
+            {
+                uint? trackNumber = null;
+                try
+                {
+                    // TagLibSharp supports: MP3, FLAC, OGG, M4A, AAC, WMA, WAV, and many more
+                    using (var file = TagLib.File.Create(f))
+                    {
+                        trackNumber = file.Tag.Track;
+                    }
+                }
+                catch
+                {
+                    // Failed to read metadata - will fall back to filename sorting
+                }
+                return new { FilePath = f, TrackNumber = trackNumber };
+            }).ToList();
+
+            // Check if any files have valid track numbers
+            var filesWithTracks = fileTuples.Where(t => t.TrackNumber.HasValue && t.TrackNumber.Value > 0).ToList();
+
+            if (filesWithTracks.Count > 0)
+            {
+                // Sort files with track numbers by track number
+                var sortedWithTracks = filesWithTracks.OrderBy(t => t.TrackNumber!.Value).Select(t => t.FilePath).ToList();
+
+                // Files without track numbers are sorted by filename and appended
+                var filesWithoutTracks = fileTuples
+                    .Where(t => !t.TrackNumber.HasValue || t.TrackNumber.Value == 0)
+                    .OrderBy(t => Path.GetFileName(t.FilePath))
+                    .Select(t => t.FilePath)
+                    .ToList();
+
+                return sortedWithTracks.Concat(filesWithoutTracks).ToArray();
+            }
+            else
+            {
+                // No valid track numbers found - fall back to filename sorting
+                return filesInFolder.OrderBy(p => Path.GetFileName(p)).ToArray();
+            }
+        }
+        catch
+        {
+            // Failed to sort by metadata - fall back to filename sorting
+            return filesInFolder.OrderBy(p => Path.GetFileName(p)).ToArray();
+        }
     }
 }
