@@ -38,6 +38,7 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Multi-format audio file picker
   - Track sorting dialog with drag-and-drop and Move Up/Down buttons
   - **Automatic track sorting by ID3 tag track numbers** - reads audio file metadata to intelligently order tracks
+  - **Enhanced track display with ID3 metadata** - track sort dialog shows formatted track names (track number - artist - title) extracted from audio file ID3 tags
   - Configurable RFID prefix (default: 0EED)
   - Automatic title generation from source folder name
   - Custom metadata management via customTonies.json
@@ -101,6 +102,9 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Combines tracks with proper 4k boundary alignment
   - Enables efficient track addition to existing Tonies without re-encoding
   - Detailed documentation in TONIE_MODIFICATION_FIX.md
+- **Comprehensive test coverage** for end-to-end workflows
+  - ID3 metadata parsing and display in track sort dialog (TrackSortDialogTests.cs)
+  - Audio playback validation including shuffled track order (EndToEndWorkflowTests.cs)
 
 ### Bug Fixes
 - **Fixed critical Audio ID and hash generation behavior** ⚠️ IMPORTANT
