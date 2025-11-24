@@ -33,9 +33,9 @@ public class HybridTonieEncodingService
 
     /// <summary>
     /// Encodes a custom tonie from a mix of original and new tracks.
-    /// Uses the new simpler approach: extracts original tracks to temp Ogg files,
-    /// then re-encodes all tracks together using the proven GenerateAudio() path.
-    /// This avoids the complex manual Ogg stream manipulation that was causing playback issues.
+    /// Uses the NEW LOSSLESS approach: extracts original tracks without re-encoding (perfect quality preservation),
+    /// encodes only new tracks, then combines using proper Ogg page manipulation.
+    /// This approach guarantees deterministic hashes and no generation loss for original tracks.
     /// </summary>
     public (byte[] FileContent, string Hash) EncodeHybridTonie(
         List<TrackSourceInfo> tracks,
@@ -56,111 +56,63 @@ public class HybridTonieEncodingService
             return (generatedAudio.FileContent, resultHash);
         }
 
-        // NEW APPROACH: Extract original tracks to temp Ogg files using ffmpeg splitting
-        // This preserves exact chapter boundaries by using granule positions
-        var originalAudio = TonieAudio.FromFile(originalTonieFilePath);
-        List<string> extractedTrackFiles = originalAudio.ExtractTracksToTempFiles();
+        // LOSSLESS APPROACH: Extract raw Ogg data without re-encoding
+        var originalAudio = TonieAudio.FromFile(originalTonieFilePath, readAudio: true);
+        List<byte[]> rawChapterData = originalAudio.ExtractRawChapterData();
 
         try
         {
-            // Build list of all track file paths in correct order
-            var allTrackPaths = new List<string>();
+            // Build list of all track Ogg data in correct order
+            var allTrackOggData = new List<byte[]>();
 
             for (int i = 0; i < tracks.Count; i++)
             {
                 var track = tracks[i];
 
-                if (track.IsOriginal && track.OriginalTrackIndex >= 0 && track.OriginalTrackIndex < extractedTrackFiles.Count)
+                if (track.IsOriginal && track.OriginalTrackIndex >= 0 && track.OriginalTrackIndex < rawChapterData.Count)
                 {
-                    // Use extracted temp Ogg file for original track
-                    allTrackPaths.Add(extractedTrackFiles[track.OriginalTrackIndex]);
+                    // Use raw chapter data (already encoded, no quality loss!)
+                    // Update stream serial number to match our audio ID
+                    // Note: resetGranulePositions = true because extracted chapters have cumulative granules from original file
+                    var tempAudio = new TonieAudio();
+                    tempAudio.Audio = rawChapterData[track.OriginalTrackIndex];
+                    byte[] updatedOggData = tempAudio.UpdateStreamSerialNumber(audioId, resetGranulePositions: true);
+                    allTrackOggData.Add(updatedOggData);
                 }
                 else
                 {
-                    // Use file path for new tracks
-                    allTrackPaths.Add(track.AudioFilePath!);
+                    // Encode new track with same audio ID
+                    TonieAudio newTrackAudio = new TonieAudio(new[] { track.AudioFilePath! }, audioId, bitRate * 1000, false, null, callback);
+                    // Extract just the audio data (Ogg stream)
+                    allTrackOggData.Add(newTrackAudio.Audio);
                 }
             }
 
-            // Use regular encoding path - simpler and more reliable!
-            // All tracks get re-encoded, but Opus at 96kbps degrades gracefully
-            TonieAudio hybridAudio = new TonieAudio(allTrackPaths.ToArray(), audioId, bitRate * 1000, false, null, callback);
+            // Combine all tracks losslessly using proper Ogg page manipulation
+            var (audioData, hash, chapterMarkers) = TonieAudio.CombineOggTracksLossless(allTrackOggData, audioId);
 
-            string hybridHash = BitConverter.ToString(hybridAudio.Header.Hash).Replace("-", "");
-            return (hybridAudio.FileContent, hybridHash);
+            // Build final Tonie file with header
+            byte[] fileContent = new byte[audioData.Length + 0x1000];
+            Array.Copy(audioData, 0, fileContent, 0x1000, audioData.Length);
+
+            // Create and write header
+            var tonieAudio = new TonieAudio();
+            tonieAudio.FileContent = fileContent;
+            tonieAudio.Audio = audioData;
+            tonieAudio.Header.Hash = hash;
+            tonieAudio.Header.AudioLength = audioData.Length;
+            tonieAudio.Header.AudioId = audioId;
+            tonieAudio.Header.AudioChapters = chapterMarkers;
+            tonieAudio.Header.Padding = new byte[0];
+            tonieAudio.UpdateFileContent();
+
+            string resultHash = BitConverter.ToString(hash).Replace("-", "");
+            return (tonieAudio.FileContent, resultHash);
         }
-        finally
+        catch (Exception ex)
         {
-            // Clean up temporary extracted track files
-            foreach (var tempFile in extractedTrackFiles)
-            {
-                try
-                {
-                    if (File.Exists(tempFile))
-                    {
-                        File.Delete(tempFile);
-                    }
-                }
-                catch
-                {
-                    // Ignore cleanup errors
-                }
-            }
+            // If lossless approach fails, provide helpful error message
+            throw new Exception($"Failed to encode hybrid tonie: {ex.Message}", ex);
         }
-    }
-
-    /// <summary>
-    /// LEGACY: Old approach using manual Ogg stream manipulation.
-    /// Kept for reference but no longer used due to playback issues.
-    /// Original tracks are copied directly (no re-encoding), new tracks are encoded.
-    /// </summary>
-    [Obsolete("This method has playback issues. Use EncodeHybridTonie() instead which uses the ffmpeg splitting approach.")]
-    public (byte[] FileContent, string Hash) EncodeHybridTonieLegacy(
-        List<TrackSourceInfo> tracks,
-        uint audioId,
-        string originalTonieFilePath,
-        int bitRate = 96)
-    {
-        // Check if we have any original tracks
-        var hasOriginalTracks = tracks.Any(t => t.IsOriginal);
-
-        // If all tracks are new, just use regular encoding
-        if (!hasOriginalTracks)
-        {
-            var audioPaths = tracks.Select(t => t.AudioFilePath!).ToArray();
-            TonieAudio generatedAudio = new TonieAudio(audioPaths, audioId, bitRate * 1000, false, null);
-            string resultHash = BitConverter.ToString(generatedAudio.Header.Hash).Replace("-", "");
-            return (generatedAudio.FileContent, resultHash);
-        }
-
-        // Extract raw chapter data from original tonie
-        var originalAudio = TonieAudio.FromFile(originalTonieFilePath);
-        var rawChapters = originalAudio.ExtractRawChapterData();
-
-        // Build array of TrackSource objects for TonieAudio
-        var trackSources = new List<TonieAudio.TrackSource>();
-
-        for (int i = 0; i < tracks.Count; i++)
-        {
-            var track = tracks[i];
-
-            if (track.IsOriginal && track.OriginalTrackIndex >= 0 && track.OriginalTrackIndex < rawChapters.Count)
-            {
-                // Use pre-encoded data
-                trackSources.Add(new TonieAudio.TrackSource(rawChapters[track.OriginalTrackIndex]));
-            }
-            else
-            {
-                // Use file path for new tracks
-                trackSources.Add(new TonieAudio.TrackSource(track.AudioFilePath!));
-            }
-        }
-
-        // Use the new TonieAudio constructor that supports mixed sources
-        // Pass the original audio data so headers can be extracted correctly
-        TonieAudio hybridAudio = new TonieAudio(trackSources.ToArray(), originalAudio.Audio, audioId, bitRate * 1000, false, null);
-
-        string hybridHash = BitConverter.ToString(hybridAudio.Header.Hash).Replace("-", "");
-        return (hybridAudio.FileContent, hybridHash);
     }
 }

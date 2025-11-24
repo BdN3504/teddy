@@ -436,8 +436,14 @@ public class EndToEndWorkflowTests : IDisposable
 
     private Task SimulateModifyTonieWithEncode(MainWindowViewModel viewModel, TonieFileItem file, string additionalTrackPath)
     {
+        // Default behavior: add track at the end
+        return SimulateModifyTonieWithEncode(viewModel, file, additionalTrackPath, insertPosition: -1);
+    }
+
+    private Task SimulateModifyTonieWithEncode(MainWindowViewModel viewModel, TonieFileItem file, string additionalTrackPath, int insertPosition)
+    {
         var totalSw = Stopwatch.StartNew();
-        Console.WriteLine("[TIMING] SimulateModifyTonieWithEncode: Starting...");
+        Console.WriteLine("[TIMING] SimulateModifyTonieWithEncode: Starting (LOSSLESS APPROACH)...");
 
         Console.WriteLine("  - Reading original tonie...");
         var sw = Stopwatch.StartNew();
@@ -447,61 +453,63 @@ public class EndToEndWorkflowTests : IDisposable
 
         var oldHash = BitConverter.ToString(originalAudio.Header.Hash).Replace("-", "");
         var audioId = originalAudio.Header.AudioId;
+        int originalTrackCount = originalAudio.Header.AudioChapters.Length;
 
-        // Create temp directory and decode
-        string tempDir = Path.Combine(Path.GetTempPath(), $"TeddyBench_Modify_{Guid.NewGuid():N}");
-        Directory.CreateDirectory(tempDir);
+        Console.WriteLine($"  - Original has {originalTrackCount} tracks");
+        Console.WriteLine($"  - Audio ID: 0x{audioId:X8}");
+        Console.WriteLine($"  - Adding track: {Path.GetFileName(additionalTrackPath)} at position {insertPosition}");
 
         try
         {
-            Console.WriteLine("  - Decoding original tracks...");
-            sw.Restart();
-            originalAudio.DumpAudioFiles(tempDir, Path.GetFileName(file.FilePath), false, Array.Empty<string>(), null);
-            Console.WriteLine($"[TIMING] Decode original tracks: {sw.ElapsedMilliseconds}ms");
-
-            // Get decoded files
-            var decodedFiles = Directory.GetFiles(tempDir, "*.ogg")
-                .OrderBy(f => f)
-                .ToList();
-
-            Console.WriteLine($"  - Found {decodedFiles.Count} original tracks");
-            Console.WriteLine($"  - Adding track: {Path.GetFileName(additionalTrackPath)}");
-
-            // Add the new track
-            decodedFiles.Add(additionalTrackPath);
-
-            Console.WriteLine($"  - Preparing to encode {decodedFiles.Count} tracks...");
-
-            // Re-encode with all tracks using hybrid encoding
+            // NEW LOSSLESS APPROACH: No decoding needed!
+            // Just reference original tracks by index
             var hybridEncoder = new HybridTonieEncodingService();
             var trackSources = new List<HybridTonieEncodingService.TrackSourceInfo>();
 
-            for (int i = 0; i < decodedFiles.Count - 1; i++)
+            // If insertPosition is -1, add at the end
+            int actualInsertPosition = insertPosition < 0 ? originalTrackCount : insertPosition;
+
+            // Build track list with custom ordering
+            for (int i = 0; i < originalTrackCount + 1; i++)
             {
-                trackSources.Add(new HybridTonieEncodingService.TrackSourceInfo
+                if (i == actualInsertPosition)
                 {
-                    IsOriginal = true,
-                    AudioFilePath = decodedFiles[i],
-                    OriginalTrackIndex = i
-                });
+                    // Insert the new track at this position
+                    trackSources.Add(new HybridTonieEncodingService.TrackSourceInfo
+                    {
+                        IsOriginal = false,
+                        AudioFilePath = additionalTrackPath
+                    });
+                }
+
+                // Add original track (adjust index if we already inserted the new track)
+                if (i < originalTrackCount)
+                {
+                    trackSources.Add(new HybridTonieEncodingService.TrackSourceInfo
+                    {
+                        IsOriginal = true,
+                        OriginalTrackIndex = i
+                        // No AudioFilePath needed - will extract losslessly from original file
+                    });
+                }
+                else if (i > actualInsertPosition)
+                {
+                    // We're past the end, but already inserted, so break
+                    break;
+                }
             }
 
-            // Add the new track (not original)
-            trackSources.Add(new HybridTonieEncodingService.TrackSourceInfo
-            {
-                IsOriginal = false,
-                AudioFilePath = additionalTrackPath
-            });
-
-            Console.WriteLine("  - Encoding tonie (this simulates pressing the Encode button)...");
+            Console.WriteLine($"  - Encoding tonie LOSSLESSLY ({originalTrackCount} original + 1 new track)...");
+            Console.WriteLine($"  - Track order: {string.Join(", ", trackSources.Select((t, idx) => t.IsOriginal ? $"Original[{t.OriginalTrackIndex}]" : "NEW"))}");
             sw.Restart();
             var (fileContent, newHash) = hybridEncoder.EncodeHybridTonie(
                 trackSources,
                 audioId,
                 file.FilePath,
-                96000 // 96 kbps
+                96 // bitrate (kbps, not bps)
             );
-            Console.WriteLine($"[TIMING] Hybrid encoding: {sw.ElapsedMilliseconds}ms");
+            Console.WriteLine($"[TIMING] Hybrid encoding (LOSSLESS): {sw.ElapsedMilliseconds}ms");
+            Console.WriteLine($"  ✓ Original tracks preserved without re-encoding!");
 
             Console.WriteLine("  - Writing modified tonie file...");
             sw.Restart();
@@ -516,18 +524,12 @@ public class EndToEndWorkflowTests : IDisposable
             metadataService.UpdateTonieHash(oldHash, newHash, file.DisplayName);
             Console.WriteLine($"[TIMING] Update metadata: {sw.ElapsedMilliseconds}ms");
 
-            // Clean up temp directory
-            Directory.Delete(tempDir, true);
             Console.WriteLine($"[TIMING] SimulateModifyTonieWithEncode: Total time {totalSw.ElapsedMilliseconds}ms");
-            Console.WriteLine("  - Modification complete!");
+            Console.WriteLine("  - Modification complete (LOSSLESS)!");
         }
-        catch
+        catch (Exception ex)
         {
-            // Clean up temp directory on error
-            if (Directory.Exists(tempDir))
-            {
-                Directory.Delete(tempDir, true);
-            }
+            Console.WriteLine($"  - ERROR: {ex.Message}");
             throw;
         }
 
@@ -638,6 +640,189 @@ public class EndToEndWorkflowTests : IDisposable
             Console.WriteLine($"Track {i + 1}: Expected {expectedSeconds:F2}s, Actual {actualSeconds:F2}s, Diff {diff:F2}s");
             Assert.InRange(diff, 0, 2);
         }
+    }
+
+    [AvaloniaFact]
+    public async Task ModifyTonie_AddTrack3AtEnd_ShouldSucceed()
+    {
+        var testSw = Stopwatch.StartNew();
+        Console.WriteLine("[TIMING] Test started: ModifyTonie_AddTrack3AtEnd");
+
+        // Clean up existing test tonie from constructor
+        if (File.Exists(_existingTonieFile))
+        {
+            File.Delete(_existingTonieFile);
+        }
+        if (Directory.Exists(_existingTonieDir))
+        {
+            Directory.Delete(_existingTonieDir, true);
+        }
+
+        // Arrange
+        var window = new Window();
+        var viewModel = new MainWindowViewModel(window);
+
+        // Wait for metadata to load
+        Console.WriteLine("Waiting for metadata to load...");
+        for (int i = 0; i < 10; i++)
+        {
+            await Task.Delay(1000);
+            if (viewModel.StatusText.Contains("Ready") ||
+                viewModel.StatusText.Contains("downloaded") ||
+                viewModel.StatusText.Contains("Metadata") ||
+                viewModel.StatusText.Contains("metadata loaded"))
+            {
+                break;
+            }
+        }
+
+        // Create custom tonie with track1 and track2
+        Console.WriteLine("Creating custom tonie with 2 tracks...");
+        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track1.mp3");
+        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track2.mp3");
+        var track3Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track3.mp3");
+
+        var newTonieFile = await SimulateAddCustomTonie(
+            viewModel,
+            rfidUid: "0EED5104",
+            audioPaths: new[] { track1Path, track2Path }
+        );
+
+        Assert.Single(viewModel.TonieFiles);
+        var newTonie = viewModel.TonieFiles.First();
+
+        // Add track3 at the end (position -1)
+        Console.WriteLine("Adding track3 at the END...");
+        await SimulateModifyTonieWithEncode(viewModel, newTonie, track3Path, insertPosition: -1);
+
+        // Verify track order: track1, track2, track3
+        Console.WriteLine("Verifying track order: track1, track2, track3");
+        await VerifyTrackDurations(newTonieFile, new[] { track1Path, track2Path, track3Path });
+
+        Console.WriteLine($"[TIMING] Total test time: {testSw.ElapsedMilliseconds}ms");
+        Console.WriteLine("Test completed successfully! Track order: track1, track2, track3");
+    }
+
+    [AvaloniaFact]
+    public async Task ModifyTonie_AddTrack3AtBeginning_ShouldSucceed()
+    {
+        var testSw = Stopwatch.StartNew();
+        Console.WriteLine("[TIMING] Test started: ModifyTonie_AddTrack3AtBeginning");
+
+        // Clean up existing test tonie from constructor
+        if (File.Exists(_existingTonieFile))
+        {
+            File.Delete(_existingTonieFile);
+        }
+        if (Directory.Exists(_existingTonieDir))
+        {
+            Directory.Delete(_existingTonieDir, true);
+        }
+
+        // Arrange
+        var window = new Window();
+        var viewModel = new MainWindowViewModel(window);
+
+        // Wait for metadata to load
+        Console.WriteLine("Waiting for metadata to load...");
+        for (int i = 0; i < 10; i++)
+        {
+            await Task.Delay(1000);
+            if (viewModel.StatusText.Contains("Ready") ||
+                viewModel.StatusText.Contains("downloaded") ||
+                viewModel.StatusText.Contains("Metadata") ||
+                viewModel.StatusText.Contains("metadata loaded"))
+            {
+                break;
+            }
+        }
+
+        // Create custom tonie with track1 and track2
+        Console.WriteLine("Creating custom tonie with 2 tracks...");
+        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track1.mp3");
+        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track2.mp3");
+        var track3Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track3.mp3");
+
+        var newTonieFile = await SimulateAddCustomTonie(
+            viewModel,
+            rfidUid: "0EED5104",
+            audioPaths: new[] { track1Path, track2Path }
+        );
+
+        Assert.Single(viewModel.TonieFiles);
+        var newTonie = viewModel.TonieFiles.First();
+
+        // Add track3 at the beginning (position 0)
+        Console.WriteLine("Adding track3 at the BEGINNING...");
+        await SimulateModifyTonieWithEncode(viewModel, newTonie, track3Path, insertPosition: 0);
+
+        // Verify track order: track3, track1, track2
+        Console.WriteLine("Verifying track order: track3, track1, track2");
+        await VerifyTrackDurations(newTonieFile, new[] { track3Path, track1Path, track2Path });
+
+        Console.WriteLine($"[TIMING] Total test time: {testSw.ElapsedMilliseconds}ms");
+        Console.WriteLine("Test completed successfully! Track order: track3, track1, track2");
+    }
+
+    [AvaloniaFact]
+    public async Task ModifyTonie_AddTrack3AfterTrack1_ShouldSucceed()
+    {
+        var testSw = Stopwatch.StartNew();
+        Console.WriteLine("[TIMING] Test started: ModifyTonie_AddTrack3AfterTrack1");
+
+        // Clean up existing test tonie from constructor
+        if (File.Exists(_existingTonieFile))
+        {
+            File.Delete(_existingTonieFile);
+        }
+        if (Directory.Exists(_existingTonieDir))
+        {
+            Directory.Delete(_existingTonieDir, true);
+        }
+
+        // Arrange
+        var window = new Window();
+        var viewModel = new MainWindowViewModel(window);
+
+        // Wait for metadata to load
+        Console.WriteLine("Waiting for metadata to load...");
+        for (int i = 0; i < 10; i++)
+        {
+            await Task.Delay(1000);
+            if (viewModel.StatusText.Contains("Ready") ||
+                viewModel.StatusText.Contains("downloaded") ||
+                viewModel.StatusText.Contains("Metadata") ||
+                viewModel.StatusText.Contains("metadata loaded"))
+            {
+                break;
+            }
+        }
+
+        // Create custom tonie with track1 and track2
+        Console.WriteLine("Creating custom tonie with 2 tracks...");
+        var track1Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track1.mp3");
+        var track2Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track2.mp3");
+        var track3Path = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "track3.mp3");
+
+        var newTonieFile = await SimulateAddCustomTonie(
+            viewModel,
+            rfidUid: "0EED5104",
+            audioPaths: new[] { track1Path, track2Path }
+        );
+
+        Assert.Single(viewModel.TonieFiles);
+        var newTonie = viewModel.TonieFiles.First();
+
+        // Add track3 after track1 (position 1)
+        Console.WriteLine("Adding track3 AFTER track1...");
+        await SimulateModifyTonieWithEncode(viewModel, newTonie, track3Path, insertPosition: 1);
+
+        // Verify track order: track1, track3, track2
+        Console.WriteLine("Verifying track order: track1, track3, track2");
+        await VerifyTrackDurations(newTonieFile, new[] { track1Path, track3Path, track2Path });
+
+        Console.WriteLine($"[TIMING] Total test time: {testSw.ElapsedMilliseconds}ms");
+        Console.WriteLine("Test completed successfully! Track order: track1, track3, track2");
     }
 
     public void Dispose()

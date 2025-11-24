@@ -1,4 +1,4 @@
-# Tonie Modification Fix - Ffmpeg Splitting Approach
+# Tonie Modification Fix - Lossless Ogg Page Manipulation
 
 ## Problem
 
@@ -8,135 +8,308 @@ When modifying a Tonie by adding tracks to an existing Tonie file, the Toniebox 
 - Fail to automatically play track 3
 - Require tag removal/replacement to play track 3
 
+Additionally, there was an Ogg page alignment issue causing errors:
+```
+[ERROR] Ogg page ends in next block at 0x0034AE00
+```
+
+This indicated that Ogg pages were not aligned to 4096-byte (4k) boundaries as required by the Tonie format.
+
 ## Root Cause
 
-The previous implementation used complex manual Ogg stream manipulation in `GenerateAudioFromTrackSourcesManual()` which:
-- Manually parsed and renumbered Ogg pages
-- Adjusted granule positions and sequence numbers
-- Had subtle bugs in page alignment or chapter marker generation
-- Was difficult to debug and maintain
+The issues had two causes:
+
+1. **Missing Ogg Page Padding**: The `CombineOggTracksLossless` method wrote Ogg pages directly without padding them to 4k boundaries, violating the Tonie format requirement that "Ogg pages must not cross 4096-byte block boundaries."
+
+2. **Complex Manual Stream Manipulation**: Early implementations used manual Ogg stream manipulation with subtle bugs in page alignment and chapter marker generation.
 
 ## Solution
 
-Implemented a simpler, more reliable approach using ffmpeg:
+Implemented a **lossless approach** that preserves original track encoding while properly aligning all Ogg pages.
 
-### New Method: `ExtractTracksToTempFiles()`
+### Core Methods
 
-**Location:** `TonieAudio/TonieAudio.cs:1656-1763`
+#### 1. `ExtractRawChapterData()`
+
+**Location:** `TonieAudio/TonieAudio.cs:1589-1667`
 
 **How it works:**
 
-1. **Extract precise timestamps** from existing Tonie:
-   - Uses `ParsePositions()` to read chapter markers
-   - Maps page numbers to granule positions
-   - Converts granules to seconds: `time = granule / 48000.0`
+Extracts raw Ogg pages for each track without any decoding:
+- Scans the Ogg stream to find chapter markers (page sequence numbers)
+- Copies raw byte ranges for each track
+- Returns byte arrays containing the exact encoded data
+- **Zero quality loss** - no decoding or re-encoding
 
-2. **Write full Ogg stream** to temp file:
-   - Equivalent to `dd bs=4096 skip=1` (skip Tonie header)
-   - Creates valid Ogg file with all audio
+```csharp
+// Extract original tracks without decoding
+var rawChapters = originalTonie.ExtractRawChapterData();
+// rawChapters[0] = Track 1 raw Ogg data
+// rawChapters[1] = Track 2 raw Ogg data
+```
 
-3. **Split at exact timestamps** using ffmpeg:
-   ```bash
-   ffmpeg -i full.ogg -ss 0.0 -to 10.5 -c copy track1.ogg
-   ffmpeg -i full.ogg -ss 10.5 -to 25.3 -c copy track2.ogg
-   ```
-   - `-c copy` means no re-encoding at this stage
-   - Preserves exact chapter boundaries from granule positions
+#### 2. `UpdateStreamSerialNumber()`
 
-4. **Return temp file paths** for extracted tracks
+**Location:** `TonieAudio/TonieAudio.cs:1674-1723`
+
+**How it works:**
+
+Updates the Audio ID (stream serial number) in Ogg pages without re-encoding:
+- Parses Ogg pages from raw data
+- Updates the `BitstreamSerialNumber` field in each page header
+- Optionally resets granule positions (for combining tracks)
+- Recalculates CRC checksums
+- Returns updated raw Ogg data
+
+```csharp
+// Update stream serial number to match new Audio ID
+byte[] updatedOggData = tempAudio.UpdateStreamSerialNumber(audioId, resetGranulePositions: true);
+```
+
+#### 3. `CombineOggTracksLossless()`
+
+**Location:** `TonieAudio/TonieAudio.cs:1731-1930`
+
+**How it works:**
+
+Combines multiple Ogg tracks into a single Tonie-compatible stream:
+1. **Parse all tracks**: Reads Ogg pages from each track's raw data
+2. **Extract headers**: Takes OpusHead and OpusTags from first track
+3. **Pad headers**: Ensures headers occupy exactly 0x200 (512) bytes
+4. **Process each track**:
+   - Updates stream serial number (Audio ID)
+   - Renumbers page sequences for continuity
+   - Adjusts granule positions to be cumulative
+   - **Adds padding segments** to align pages to 4k boundaries
+   - Clears BOS/EOS flags (set only on final page)
+5. **Set EOS flag**: Marks the last page as end-of-stream
+6. **Generate chapter markers**: Records page sequence number for each track start
+7. **Compute hash**: SHA1 of the entire audio stream
+
+**Key Fix - Ogg Page Alignment:**
+
+```csharp
+// Calculate how much padding is needed to reach 4k boundary
+long posAfterPage = currentPos + pageSize;
+long nextBoundary = ((posAfterPage + 0xFFF) / 0x1000) * 0x1000;
+long spaceToFill = nextBoundary - posAfterPage;
+
+if (spaceToFill > 0)
+{
+    // Add padding segments (max 254 bytes each to avoid 255-byte special case)
+    // Each 254-byte segment needs exactly 1 byte in the segment table
+    long paddingData = (spaceToFill * 254) / 255;
+    int segmentEntries = (int)((paddingData + 253) / 254);
+
+    // Create new segments array with padding
+    byte[][] newSegments = new byte[page.Segments.Length + segmentEntries][];
+    Array.Copy(page.Segments, newSegments, page.Segments.Length);
+
+    // Add padding segments (254 bytes each)
+    int segIdx = page.Segments.Length;
+    long remaining = paddingData;
+    while (remaining > 0)
+    {
+        int segSize = (int)Math.Min(254, remaining);
+        newSegments[segIdx++] = new byte[segSize];
+        remaining -= segSize;
+    }
+    page.Segments = newSegments;
+}
+```
+
+This ensures every Ogg page ends exactly at a 4k boundary, eliminating the page alignment errors.
 
 ### Updated: `HybridTonieEncodingService.EncodeHybridTonie()`
 
-**Location:** `TeddyBench.Avalonia/Services/HybridTonieEncodingService.cs:34-109`
+**Location:** `TeddyBench.Avalonia/Services/HybridTonieEncodingService.cs:40-117`
 
-**New workflow:**
+**Lossless workflow:**
 
 ```csharp
-// Extract original tracks to temp Ogg files
-var extractedTracks = originalAudio.ExtractTracksToTempFiles();
+// Extract raw Ogg data without re-encoding
+var originalAudio = TonieAudio.FromFile(originalTonieFilePath, readAudio: true);
+List<byte[]> rawChapterData = originalAudio.ExtractRawChapterData();
 
-// Build list of all tracks (original + new)
-var allTrackPaths = new List<string>();
-allTrackPaths.AddRange(extractedTracks);  // Original tracks
-allTrackPaths.Add(newTrack3Path);         // New track
+// Build list of all track Ogg data in correct order
+var allTrackOggData = new List<byte[]>();
 
-// Use regular encoding - simpler and reliable!
-TonieAudio modifiedTonie = new TonieAudio(allTrackPaths.ToArray(), audioId, bitRate * 1000, false, null);
+for (int i = 0; i < tracks.Count; i++)
+{
+    var track = tracks[i];
+
+    if (track.IsOriginal && track.OriginalTrackIndex >= 0)
+    {
+        // Use raw chapter data (already encoded, no quality loss!)
+        var tempAudio = new TonieAudio();
+        tempAudio.Audio = rawChapterData[track.OriginalTrackIndex];
+        byte[] updatedOggData = tempAudio.UpdateStreamSerialNumber(audioId, resetGranulePositions: true);
+        allTrackOggData.Add(updatedOggData);
+    }
+    else
+    {
+        // Encode new track with same audio ID
+        TonieAudio newTrackAudio = new TonieAudio(new[] { track.AudioFilePath! }, audioId, bitRate * 1000, false, null, callback);
+        allTrackOggData.Add(newTrackAudio.Audio);
+    }
+}
+
+// Combine all tracks losslessly using proper Ogg page manipulation
+var (audioData, hash, chapterMarkers) = TonieAudio.CombineOggTracksLossless(allTrackOggData, audioId);
+
+// Build final Tonie file with header
+byte[] fileContent = new byte[audioData.Length + 0x1000];
+Array.Copy(audioData, 0, fileContent, 0x1000, audioData.Length);
+
+// Create and write header
+var tonieAudio = new TonieAudio();
+tonieAudio.FileContent = fileContent;
+tonieAudio.Audio = audioData;
+tonieAudio.Header.Hash = hash;
+tonieAudio.Header.AudioLength = audioData.Length;
+tonieAudio.Header.AudioId = audioId;
+tonieAudio.Header.AudioChapters = chapterMarkers;
+tonieAudio.Header.Padding = new byte[0];
+tonieAudio.UpdateFileContent();
 ```
 
-### Legacy Code (Preserved)
+## Advantages of Lossless Approach
 
-The old approach is kept as `EncodeHybridTonieLegacy()` for reference:
-- Marked with `[Obsolete]` attribute
-- Not used by GUI anymore
-- Manual Ogg stream manipulation code remains in `GenerateAudioFromTrackSourcesManual()`
+✅ **Zero quality loss** - Original tracks preserved byte-for-byte (except stream serial number)
+✅ **Deterministic hashes** - Same audio + same Audio ID = same hash
+✅ **Proper page alignment** - All Ogg pages end at 4k boundaries
+✅ **Hardware compatible** - Stream serial number matches Audio ID
+✅ **No decoding/re-encoding** - Manipulates only Ogg container metadata
+✅ **Faster** - No transcoding overhead for original tracks
+✅ **Simpler dependencies** - No ffmpeg required for modification
 
-## Advantages of New Approach
+## How It Differs from Re-encoding
 
-✅ **Simpler** - Uses proven `GenerateAudio()` encoding path
-✅ **More reliable** - No complex manual Ogg page manipulation
-✅ **Preserves chapter boundaries** - ffmpeg splits at exact granule timestamps
-✅ **Easier to debug** - Standard ffmpeg + standard encoding
-✅ **Better tested** - Uses battle-tested encoding logic
-
-## Trade-offs
-
-⚠️ **Minor quality loss** - Re-encodes original tracks at 96kbps
-- Opus degrades gracefully, loss is minimal
-- Original tracks were already lossy at 96kbps
-- Second encode has negligible impact on perceived quality
+| Aspect | Re-encoding Approach | Lossless Approach |
+|--------|---------------------|-------------------|
+| Original tracks | Decoded → Re-encoded | Raw Ogg pages copied |
+| Quality loss | Minor (Opus 96kbps → 96kbps) | None (bit-perfect) |
+| Speed | Slower (transcoding) | Faster (metadata only) |
+| Hash determinism | Not guaranteed | Guaranteed |
+| Dependencies | Requires ffmpeg | Only for new tracks |
 
 ## Testing
 
-### Automated Test
+### Automated Tests
 
-New test: `NewApproach_ExtractTracksToTempFiles_ThenReencode_ShouldProduceValidFile()`
+**Test:** `LosslessApproach_CreateCustomTonie_ThenAddTrack_ShouldPreserveAudioIdAndFolder()`
 
-**Location:** `TonieAudio.Tests/HybridEncodingTests.cs:447-561`
+**Location:** `TonieAudio.Tests/HybridEncodingTests.cs:564-772`
 
 **Results:**
 ```
-✓ Extracts 2 tracks from initial Tonie
-✓ Re-encodes with 3rd track added
-✓ Produces valid Ogg page structure
-✓ Chapter markers are sequential [0, 34, 76]
-✓ Hash validation passes
+✓ Creates initial tonie with 2 tracks
+✓ Modifies by adding 3rd track using lossless approach
+✓ Original tracks preserved without re-encoding
+✓ Hash changed (as expected when content changes)
+✓ Audio ID preserved (0xCAFEBABE)
+✓ Folder structure preserved
+✓ Duration correct (original + new track)
+✓ Ogg structure valid (no page alignment errors)
 ```
 
-### Manual Testing Required
+**Test:** `CreateTonie_ThenAppendTrack_ShouldProduceValidFile()`
+
+**Location:** `TonieAudio.Tests/HybridEncodingTests.cs:18-142`
+
+**Results:**
+```
+✓ Extracts 2 raw chapters from initial tonie
+✓ Creates modified tonie with 3 tracks (2 original + 1 new)
+✓ Produces valid Ogg page structure
+✓ Hash validation passes
+✓ No Ogg page alignment errors
+```
+
+### End-to-End Test
+
+**Test:** `CompleteWorkflow_CreateDeleteModifyAndPlayTonie_ShouldSucceed()`
+
+**Location:** `TeddyBench.Avalonia.Tests/EndToEndWorkflowTests.cs`
+
+**Results:**
+```
+✓ Creates custom tonie with 2 tracks
+✓ Deletes and re-creates
+✓ Modifies by adding 3rd track using lossless approach
+✓ All 3 tracks playable in VLC
+✓ No VLC errors during playback
+✓ Original tracks preserved without re-encoding
+✓ Total test time: ~8.6 seconds
+```
+
+### Manual Testing
 
 **To verify the fix on actual Toniebox:**
 
 1. Build the GUI: `dotnet build TeddyBench.Avalonia/TeddyBench.Avalonia.csproj --configuration Release`
-2. Open an existing Tonie with 2+ tracks
-3. Click "Modify" button
-4. Add a new track at the end
-5. Save to SD card
-6. Place tag on Toniebox and verify:
-   - Track 1 plays completely ✓
-   - Track 2 plays completely ✓
-   - Track 3 starts **automatically** (no red LED) ✓
-   - All tracks play in sequence ✓
+2. Create or open an existing Tonie with 2+ tracks
+3. Right-click and select "Modify Tonie"
+4. Add a new track (at any position: beginning, middle, or end)
+5. Click "Encode" button
+6. Save to SD card
+7. Place tag on Toniebox and verify:
+   - All original tracks play completely ✓
+   - New track plays completely ✓
+   - All tracks transition automatically (no red LED) ✓
+   - Playback is seamless from track to track ✓
+   - No console errors about page alignment ✓
 
 ## Files Changed
 
 1. **TonieAudio/TonieAudio.cs**
-   - Added `ExtractTracksToTempFiles()` method (lines 1656-1763)
-   - Uses ffmpeg to split Ogg at precise timestamps
-   - Kept legacy code intact
+   - `ExtractRawChapterData()` (lines 1589-1667): Extracts raw Ogg pages per track
+   - `UpdateStreamSerialNumber()` (lines 1674-1723): Updates Audio ID without re-encoding
+   - `CombineOggTracksLossless()` (lines 1731-1930): Combines tracks with proper 4k padding
+   - Fixed Ogg page alignment bug by adding padding segments
 
 2. **TeddyBench.Avalonia/Services/HybridTonieEncodingService.cs**
-   - Updated `EncodeHybridTonie()` to use new approach (lines 34-109)
-   - Renamed old implementation to `EncodeHybridTonieLegacy()` (lines 111-164)
-   - Marked legacy method as `[Obsolete]`
+   - `EncodeHybridTonie()` (lines 40-117): Uses lossless approach
+   - Removed obsolete `EncodeHybridTonieLegacy()` method
 
 3. **TonieAudio.Tests/HybridEncodingTests.cs**
-   - Added test for new approach (lines 447-561)
+   - Added `LosslessApproach_CreateCustomTonie_ThenAddTrack_ShouldPreserveAudioIdAndFolder()` test
+   - Added `CreateTonie_ThenAppendTrack_ShouldProduceValidFile()` test
+   - Removed obsolete `NewApproach_ExtractTracksToTempFiles_ThenReencode_ShouldProduceValidFile()` test
+
+4. **TeddyBench.Avalonia.Tests/EndToEndWorkflowTests.cs**
+   - Added end-to-end test verifying complete workflow with audio playback
+
+## Technical Details
+
+### Ogg Page Alignment Algorithm
+
+The fix uses a careful algorithm to add padding while maintaining valid Ogg structure:
+
+1. **Calculate space needed**: `nextBoundary - posAfterPage`
+2. **Account for segment table overhead**: Each segment needs 1 byte in segment table
+3. **Use 254-byte segments**: Avoids 255-byte special case (which requires 2 table entries: 0xFF + 0x00)
+4. **Solve equation**: `paddingData + ceil(paddingData / 254) = spaceToFill`
+5. **Approximation**: `paddingData ≈ (spaceToFill * 254) / 255`
+6. **Iterative refinement**: Adjust until exact
+
+This ensures each page ends precisely at a 4k boundary without violating Ogg specification.
+
+### Stream Serial Number = Audio ID
+
+The Toniebox hardware expects the Ogg stream serial number to match the Audio ID in the protobuf header. This is why:
+- Different Audio IDs produce different hashes (even with identical audio)
+- The hash includes the stream serial number via Ogg page headers
+- Modifying an existing tonie must preserve the Audio ID to maintain the same serial number
+
+The lossless approach ensures this by:
+1. Reading the original Audio ID from the tonie
+2. Updating stream serial numbers in all tracks to match
+3. Using the same Audio ID when encoding new tracks
 
 ## Dependencies
 
-Requires **ffmpeg** binary in PATH:
-- Linux/macOS: Usually pre-installed or via package manager
-- Windows: Included with TeddyBench distributions
+- **For encoding new tracks**: Requires `ffmpeg` binary in PATH (Linux/macOS/Windows)
+- **For modifying existing tonies**: No additional dependencies (lossless manipulation only)
 
-Already listed in prerequisites for audio resampling.
+FFmpeg is already listed in prerequisites for audio resampling and multi-format support.

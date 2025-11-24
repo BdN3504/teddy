@@ -507,7 +507,8 @@ namespace TeddyBench.Avalonia.Services
 
                 // Update the stream serial number (Audio ID) in the audio data without re-encoding
                 // This preserves the exact audio encoding, making hashes deterministic
-                byte[] updatedAudioData = await Task.Run(() => originalTonie.UpdateStreamSerialNumber(finalAudioId));
+                // Note: resetGranulePositions = false because the tonie already has proper granule positions
+                byte[] updatedAudioData = await Task.Run(() => originalTonie.UpdateStreamSerialNumber(finalAudioId, resetGranulePositions: false));
 
                 // Create a new TonieAudio with the updated audio data
                 var newTonie = new TonieAudio();

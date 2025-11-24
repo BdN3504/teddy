@@ -2010,7 +2010,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 // Start encoding in background task
                 var encodingTask = Task.Run(() =>
                 {
-                    // Build track sources - identify which are original vs new
+                    // Build track sources using LOSSLESS approach
+                    // Original tracks: use track index (no re-encoding!)
+                    // New tracks: use file path (encode once)
                     var trackSources = new List<HybridTonieEncodingService.TrackSourceInfo>();
 
                     for (int i = 0; i < sortedAudioPaths.Length; i++)
@@ -2018,28 +2020,47 @@ public partial class MainWindowViewModel : ViewModelBase
                         string path = sortedAudioPaths[i];
                         bool isOriginal = path.StartsWith(tempDirPath);
 
-                        var trackSource = new HybridTonieEncodingService.TrackSourceInfo
-                        {
-                            IsOriginal = isOriginal,
-                            AudioFilePath = path
-                        };
-
-                        // If this is an original track, extract its track index from the filename
                         if (isOriginal)
                         {
+                            // Original track: Extract track index from filename
                             // Filename format: "500304E0 - Track #01.ogg"
                             var fileName = Path.GetFileName(path);
                             var match = System.Text.RegularExpressions.Regex.Match(fileName, @"Track #(\d+)\.ogg");
+
                             if (match.Success && int.TryParse(match.Groups[1].Value, out int trackNum))
                             {
-                                trackSource.OriginalTrackIndex = trackNum - 1; // Convert to 0-based index
+                                // LOSSLESS: Pass track index, NOT file path!
+                                // This avoids re-encoding the decoded OGG file
+                                trackSources.Add(new HybridTonieEncodingService.TrackSourceInfo
+                                {
+                                    IsOriginal = true,
+                                    OriginalTrackIndex = trackNum - 1  // 0-based index
+                                    // AudioFilePath is null - service will extract raw data directly!
+                                });
+                            }
+                            else
+                            {
+                                // Fallback: if we can't parse track number, treat as new file
+                                // (This shouldn't happen with DumpAudioFiles output, but be safe)
+                                trackSources.Add(new HybridTonieEncodingService.TrackSourceInfo
+                                {
+                                    IsOriginal = false,
+                                    AudioFilePath = path
+                                });
                             }
                         }
-
-                        trackSources.Add(trackSource);
+                        else
+                        {
+                            // New track: Pass file path for encoding
+                            trackSources.Add(new HybridTonieEncodingService.TrackSourceInfo
+                            {
+                                IsOriginal = false,
+                                AudioFilePath = path
+                            });
+                        }
                     }
 
-                    // Use hybrid encoding to avoid re-encoding original tracks
+                    // Use hybrid encoding with LOSSLESS approach for original tracks
                     var hybridEncoder = new HybridTonieEncodingService();
                     var (fileContent, hash) = hybridEncoder.EncodeHybridTonie(trackSources, audioId, file.FilePath, 96, encodeCallback);
                     newHash = hash;

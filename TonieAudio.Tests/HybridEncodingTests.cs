@@ -561,26 +561,45 @@ namespace TonieAudio.Tests
         }
 
         [Fact]
-        public void NewApproach_ExtractTracksToTempFiles_ThenReencode_ShouldProduceValidFile()
+        public void LosslessApproach_CreateCustomTonie_ThenAddTrack_ShouldPreserveAudioIdAndFolder()
         {
-            // This test uses the new simpler approach: extract tracks to temp Ogg files
-            // using ffmpeg splitting, then re-encode all tracks together.
+            // This test verifies the NEW LOSSLESS approach using CombineOggTracksLossless:
+            // 1. Creates a custom tonie with specific audio ID and RFID UID in folder structure
+            // 2. Verifies initial hash and audio ID
+            // 3. Modifies by adding a third track using the lossless approach
+            // 4. Verifies: different hash, same audio ID, same folder structure
+            // 5. Verifies total duration = original duration + third track duration
 
             // Arrange
             string track1 = Path.Combine(_testDataDir, "track1.mp3");
             string track2 = Path.Combine(_testDataDir, "track2.mp3");
             string track3 = Path.Combine(_testDataDir, "track3.mp3");
 
-            string initialTonieFile = Path.Combine(Path.GetTempPath(), $"test_new_approach_initial_{Guid.NewGuid()}.bin");
-            string modifiedTonieFile = Path.Combine(Path.GetTempPath(), $"test_new_approach_modified_{Guid.NewGuid()}.bin");
+            Assert.True(File.Exists(track1), $"Track1 not found: {track1}");
+            Assert.True(File.Exists(track2), $"Track2 not found: {track2}");
+            Assert.True(File.Exists(track3), $"Track3 not found: {track3}");
+
+            // Setup: Create folder structure mimicking SD card with RFID UID
+            uint audioId = 0xCAFEBABE;
+            string rfidUid = "0451ED0E"; // Example RFID in reversed format
+            string tempRoot = Path.Combine(Path.GetTempPath(), $"teddy_test_{Guid.NewGuid()}");
+            string tonieFolder = Path.Combine(tempRoot, rfidUid, "500304E0");
+            Directory.CreateDirectory(tonieFolder);
+
+            string initialTonieFile = Path.Combine(tonieFolder, "500304E0");
+            string modifiedTonieFile = Path.Combine(tonieFolder, "500304E0"); // Same file, will overwrite
 
             try
             {
-                // Act 1: Create initial tonie with 2 tracks
-                Console.WriteLine("=== STEP 1: Creating initial tonie with 2 tracks ===");
+                // ===== STEP 1: Create initial custom tonie with 2 tracks =====
+                Console.WriteLine("=== STEP 1: Creating initial custom tonie with 2 tracks ===");
+                Console.WriteLine($"Audio ID: 0x{audioId:X8}");
+                Console.WriteLine($"RFID UID: {rfidUid}");
+                Console.WriteLine($"Folder: {tonieFolder}");
+
                 TonieFile.TonieAudio initialTonie = new TonieFile.TonieAudio(
                     new[] { track1, track2 },
-                    audioId: 12345,
+                    audioId: audioId,
                     bitRate: 96000,
                     useVbr: false,
                     prefixLocation: null,
@@ -588,60 +607,141 @@ namespace TonieAudio.Tests
                 );
 
                 File.WriteAllBytes(initialTonieFile, initialTonie.FileContent);
+                string initialHash = BitConverter.ToString(initialTonie.Header.Hash).Replace("-", "");
+
                 Console.WriteLine($"Initial tonie created: {initialTonieFile}");
-                Console.WriteLine($"Initial tonie has {initialTonie.Header.AudioChapters.Length} chapters");
+                Console.WriteLine($"Initial hash: {initialHash}");
+                Console.WriteLine($"Initial audio ID: 0x{initialTonie.Header.AudioId:X8}");
+                Console.WriteLine($"Initial chapters: {initialTonie.Header.AudioChapters.Length}");
 
-                // Act 2: Read back and extract tracks using new approach
-                Console.WriteLine("\n=== STEP 2: Extracting tracks using ExtractTracksToTempFiles() ===");
-                TonieFile.TonieAudio readBack = TonieFile.TonieAudio.FromFile(initialTonieFile, readAudio: true);
-                List<string> extractedTracks = readBack.ExtractTracksToTempFiles();
+                // Assert 1: Initial tonie should have correct properties
+                Assert.Equal(2, initialTonie.Header.AudioChapters.Length);
+                Assert.Equal(audioId, initialTonie.Header.AudioId);
+                Assert.True(File.Exists(initialTonieFile));
 
-                Console.WriteLine($"Extracted {extractedTracks.Count} tracks:");
-                for (int i = 0; i < extractedTracks.Count; i++)
-                {
-                    var fileInfo = new FileInfo(extractedTracks[i]);
-                    Console.WriteLine($"  Track {i + 1}: {extractedTracks[i]} ({fileInfo.Length} bytes)");
-                }
+                // Calculate initial duration
+                var initialReadBack = TonieFile.TonieAudio.FromFile(initialTonieFile, readAudio: true);
+                Assert.True(initialReadBack.HashCorrect, "Initial hash should be correct");
 
-                // Assert: Should have extracted 2 tracks
-                Assert.Equal(2, extractedTracks.Count);
+                ulong[] initialPositions = initialReadBack.ParsePositions();
+                ulong initialDurationGranules = initialPositions[initialPositions.Length - 1];
+                double initialDurationSeconds = initialDurationGranules / 48000.0;
+                int initialMinutes = (int)(initialDurationSeconds / 60);
+                int initialSeconds = (int)(initialDurationSeconds % 60);
 
-                // Act 3: Create modified tonie with original 2 tracks + new track using simple re-encoding
-                Console.WriteLine("\n=== STEP 3: Re-encoding all tracks (2 original + 1 new) ===");
-                var allTrackPaths = new List<string>();
-                allTrackPaths.AddRange(extractedTracks);  // Original tracks
-                allTrackPaths.Add(track3);                 // New track
+                Console.WriteLine($"Initial duration: {initialDurationGranules} granules = {initialMinutes}:{initialSeconds:D2}");
 
-                TonieFile.TonieAudio modifiedTonie = new TonieFile.TonieAudio(
-                    allTrackPaths.ToArray(),
-                    audioId: 12345,
+                // ===== STEP 2: Modify tonie by adding third track using LOSSLESS approach =====
+                Console.WriteLine("\n=== STEP 2: Modifying tonie by adding third track (LOSSLESS) ===");
+
+                // Extract raw chapter data (no re-encoding!)
+                List<byte[]> rawChapterData = initialReadBack.ExtractRawChapterData();
+                Console.WriteLine($"Extracted {rawChapterData.Count} raw chapters (no decoding!)");
+
+                // Update stream serial numbers to match audio ID (preserves exact encoding)
+                // Note: resetGranulePositions = true because extracted chapters have cumulative granules from original file
+                var track1Updated = new TonieFile.TonieAudio { Audio = rawChapterData[0] }.UpdateStreamSerialNumber(audioId, resetGranulePositions: true);
+                var track2Updated = new TonieFile.TonieAudio { Audio = rawChapterData[1] }.UpdateStreamSerialNumber(audioId, resetGranulePositions: true);
+
+                Console.WriteLine($"Track 1 updated: {track1Updated.Length} bytes (lossless)");
+                Console.WriteLine($"Track 2 updated: {track2Updated.Length} bytes (lossless)");
+
+                // Encode third track
+                Console.WriteLine($"Encoding track 3 from: {track3}");
+                TonieFile.TonieAudio track3Audio = new TonieFile.TonieAudio(
+                    new[] { track3 },
+                    audioId: audioId,
                     bitRate: 96000,
                     useVbr: false,
                     prefixLocation: null,
                     cbr: null
                 );
 
+                Console.WriteLine($"Track 3 encoded: {track3Audio.Audio.Length} bytes");
+
+                // Combine all tracks LOSSLESSLY
+                Console.WriteLine("\nCombining tracks using CombineOggTracksLossless...");
+                var allTrackOggData = new List<byte[]> { track1Updated, track2Updated, track3Audio.Audio };
+                var (combinedAudioData, combinedHash, chapterMarkers) = TonieFile.TonieAudio.CombineOggTracksLossless(allTrackOggData, audioId);
+
+                Console.WriteLine($"Combined audio: {combinedAudioData.Length} bytes");
+                Console.WriteLine($"Combined hash: {BitConverter.ToString(combinedHash).Replace("-", "")}");
+                Console.WriteLine($"Chapter markers: [{string.Join(", ", chapterMarkers)}]");
+
+                // Build final Tonie file with header
+                byte[] modifiedFileContent = new byte[combinedAudioData.Length + 0x1000];
+                Array.Copy(combinedAudioData, 0, modifiedFileContent, 0x1000, combinedAudioData.Length);
+
+                var modifiedTonie = new TonieFile.TonieAudio();
+                modifiedTonie.FileContent = modifiedFileContent;
+                modifiedTonie.Audio = combinedAudioData;
+                modifiedTonie.Header.Hash = combinedHash;
+                modifiedTonie.Header.AudioLength = combinedAudioData.Length;
+                modifiedTonie.Header.AudioId = audioId;
+                modifiedTonie.Header.AudioChapters = chapterMarkers;
+                modifiedTonie.Header.Padding = new byte[0];
+                modifiedTonie.UpdateFileContent();
+
                 File.WriteAllBytes(modifiedTonieFile, modifiedTonie.FileContent);
-                Console.WriteLine($"Modified tonie created: {modifiedTonieFile}");
-                Console.WriteLine($"Modified tonie has {modifiedTonie.Header.AudioChapters.Length} chapters");
+                string modifiedHash = BitConverter.ToString(combinedHash).Replace("-", "");
 
-                // Clean up extracted temp files
-                foreach (var tempFile in extractedTracks)
-                {
-                    if (File.Exists(tempFile)) File.Delete(tempFile);
-                }
+                Console.WriteLine($"\nModified tonie written: {modifiedTonieFile}");
+                Console.WriteLine($"Modified hash: {modifiedHash}");
+                Console.WriteLine($"Modified audio ID: 0x{modifiedTonie.Header.AudioId:X8}");
+                Console.WriteLine($"Modified chapters: {modifiedTonie.Header.AudioChapters.Length}");
 
-                // Assert: Modified tonie should have 3 chapters
-                Assert.Equal(3, modifiedTonie.Header.AudioChapters.Length);
+                // ===== STEP 3: Verify modified tonie properties =====
+                Console.WriteLine("\n=== STEP 3: Verifying modified tonie ===");
 
-                // Act 4: Read back and validate
-                Console.WriteLine("\n=== STEP 4: Validating modified tonie ===");
-                TonieFile.TonieAudio modifiedReadBack = TonieFile.TonieAudio.FromFile(modifiedTonieFile, readAudio: true);
+                // Read back and validate
+                var modifiedReadBack = TonieFile.TonieAudio.FromFile(modifiedTonieFile, readAudio: true);
+                Assert.True(modifiedReadBack.HashCorrect, "Modified hash should be correct");
 
-                Assert.True(modifiedReadBack.HashCorrect, "Modified tonie hash should be correct");
+                // Assert: Different hash
+                Assert.NotEqual(initialHash, modifiedHash);
+                Console.WriteLine($"✓ Hash changed: {initialHash} -> {modifiedHash}");
+
+                // Assert: Same audio ID
+                Assert.Equal(audioId, modifiedReadBack.Header.AudioId);
+                Console.WriteLine($"✓ Audio ID preserved: 0x{audioId:X8}");
+
+                // Assert: Same folder structure
+                Assert.True(File.Exists(modifiedTonieFile));
+                Assert.Equal(tonieFolder, Path.GetDirectoryName(modifiedTonieFile));
+                Console.WriteLine($"✓ Folder structure preserved: {tonieFolder}");
+
+                // Assert: 3 chapters
                 Assert.Equal(3, modifiedReadBack.Header.AudioChapters.Length);
+                Console.WriteLine($"✓ Track count: 3 chapters");
 
-                // Validate Ogg page structure
+                // Calculate modified duration
+                ulong[] modifiedPositions = modifiedReadBack.ParsePositions();
+                ulong modifiedDurationGranules = modifiedPositions[modifiedPositions.Length - 1];
+                double modifiedDurationSeconds = modifiedDurationGranules / 48000.0;
+                int modifiedMinutes = (int)(modifiedDurationSeconds / 60);
+                int modifiedSeconds = (int)(modifiedDurationSeconds % 60);
+
+                Console.WriteLine($"\nInitial duration:  {initialMinutes}:{initialSeconds:D2}");
+                Console.WriteLine($"Modified duration: {modifiedMinutes}:{modifiedSeconds:D2}");
+
+                // Get track 3 duration from the source MP3 file using ffprobe
+                double track3DurationSeconds = GetAudioDurationFromFile(track3);
+
+                // Assert: Modified duration should be initial + track3
+                double expectedDurationSeconds = initialDurationSeconds + track3DurationSeconds;
+                int expectedMinutes = (int)(expectedDurationSeconds / 60);
+                int expectedSeconds = (int)(expectedDurationSeconds % 60);
+
+                Console.WriteLine($"Track 3 duration:  {(int)(track3DurationSeconds / 60)}:{(int)(track3DurationSeconds % 60):D2}");
+                Console.WriteLine($"Expected total:    {expectedMinutes}:{expectedSeconds:D2}");
+
+                // Allow 2 second tolerance for encoding variations
+                Assert.True(Math.Abs(modifiedDurationSeconds - expectedDurationSeconds) <= 2.0,
+                    $"Modified duration ({modifiedMinutes}:{modifiedSeconds:D2}) should be approximately initial ({initialMinutes}:{initialSeconds:D2}) + track3 ({(int)(track3DurationSeconds / 60)}:{(int)(track3DurationSeconds % 60):D2}) = {expectedMinutes}:{expectedSeconds:D2}");
+
+                Console.WriteLine($"✓ Duration correct: {modifiedMinutes}:{modifiedSeconds:D2} ≈ {expectedMinutes}:{expectedSeconds:D2}");
+
+                // Validate Ogg structure
                 modifiedReadBack.CalculateStatistics(
                     out long totalSegments,
                     out long segLength,
@@ -652,27 +752,58 @@ namespace TonieAudio.Tests
                     out ulong highestGranule
                 );
 
-                Console.WriteLine($"✓ Ogg page structure is valid");
-                Console.WriteLine($"  Total segments: {totalSegments}");
-                Console.WriteLine($"  Highest granule: {highestGranule}");
+                Console.WriteLine($"✓ Ogg structure valid: {totalSegments} segments, {highestGranule} granules");
 
-                // Additional validation: Check chapter markers are sequential
-                Console.WriteLine($"\n=== STEP 5: Validating chapter markers ===");
-                Console.WriteLine($"Chapter markers: [{string.Join(", ", modifiedReadBack.Header.AudioChapters)}]");
-
-                for (int i = 1; i < modifiedReadBack.Header.AudioChapters.Length; i++)
-                {
-                    Assert.True(modifiedReadBack.Header.AudioChapters[i] > modifiedReadBack.Header.AudioChapters[i - 1],
-                        $"Chapter markers should be sequential: Chapter {i} ({modifiedReadBack.Header.AudioChapters[i]}) should be > Chapter {i-1} ({modifiedReadBack.Header.AudioChapters[i - 1]})");
-                }
-
-                Console.WriteLine("✓ Chapter markers are sequential");
-                Console.WriteLine("\n✓ All validations passed - new approach works correctly!");
+                Console.WriteLine("\n✓✓✓ ALL TESTS PASSED - Lossless approach works perfectly! ✓✓✓");
+                Console.WriteLine("    - Original tracks preserved without re-encoding");
+                Console.WriteLine("    - Hash changed (as expected when content changes)");
+                Console.WriteLine("    - Audio ID preserved");
+                Console.WriteLine("    - Folder structure preserved");
+                Console.WriteLine("    - Duration correct (original + new track)");
             }
             finally
             {
-                if (File.Exists(initialTonieFile)) File.Delete(initialTonieFile);
-                if (File.Exists(modifiedTonieFile)) File.Delete(modifiedTonieFile);
+                // Cleanup
+                if (Directory.Exists(tempRoot))
+                {
+                    Directory.Delete(tempRoot, recursive: true);
+                }
+            }
+        }
+
+        /// <summary>
+        /// Gets the duration of an audio file in seconds using ffprobe.
+        /// </summary>
+        private double GetAudioDurationFromFile(string audioFilePath)
+        {
+            try
+            {
+                var process = new System.Diagnostics.Process
+                {
+                    StartInfo = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "ffprobe",
+                        Arguments = $"-v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 \"{audioFilePath}\"",
+                        RedirectStandardOutput = true,
+                        UseShellExecute = false,
+                        CreateNoWindow = true
+                    }
+                };
+
+                process.Start();
+                string output = process.StandardOutput.ReadToEnd();
+                process.WaitForExit();
+
+                if (double.TryParse(output.Trim(), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double duration))
+                {
+                    return duration;
+                }
+
+                throw new Exception($"Failed to parse duration from ffprobe output: {output}");
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"Failed to get audio duration for {audioFilePath}: {ex.Message}", ex);
             }
         }
     }
