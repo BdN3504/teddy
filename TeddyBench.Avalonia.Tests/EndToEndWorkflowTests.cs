@@ -760,6 +760,10 @@ public class EndToEndWorkflowTests : IDisposable
         Console.WriteLine("Verifying track order: track3, track1, track2");
         await VerifyTrackDurations(newTonieFile, new[] { track3Path, track1Path, track2Path });
 
+        // Test playback of shuffled tracks
+        Console.WriteLine("Testing playback of shuffled tracks (track3, track1, track2)...");
+        await TestPlayerFunctionality(newTonieFile, new[] { track3Path, track1Path, track2Path });
+
         Console.WriteLine($"[TIMING] Total test time: {testSw.ElapsedMilliseconds}ms");
         Console.WriteLine("Test completed successfully! Track order: track3, track1, track2");
     }
@@ -820,6 +824,10 @@ public class EndToEndWorkflowTests : IDisposable
         // Verify track order: track1, track3, track2
         Console.WriteLine("Verifying track order: track1, track3, track2");
         await VerifyTrackDurations(newTonieFile, new[] { track1Path, track3Path, track2Path });
+
+        // Test playback of shuffled tracks
+        Console.WriteLine("Testing playback of shuffled tracks (track1, track3, track2)...");
+        await TestPlayerFunctionality(newTonieFile, new[] { track1Path, track3Path, track2Path });
 
         Console.WriteLine($"[TIMING] Total test time: {testSw.ElapsedMilliseconds}ms");
         Console.WriteLine("Test completed successfully! Track order: track1, track3, track2");
