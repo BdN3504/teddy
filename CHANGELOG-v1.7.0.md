@@ -36,7 +36,8 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
 
 - **Custom Tonie Creation**
   - Multi-format audio file picker
-  - Track sorting dialog with drag-and-drop
+  - Track sorting dialog with drag-and-drop and Move Up/Down buttons
+  - **Automatic track sorting by ID3 tag track numbers** - reads audio file metadata to intelligently order tracks
   - Configurable RFID prefix (default: 0EED)
   - Automatic title generation from source folder name
   - Custom metadata management via customTonies.json
@@ -112,6 +113,7 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Updated all test fixtures to work with new JArray-based customTonies.json format
 - Replaced deprecated `Thread.Abort()` for .NET 8.0 compatibility
 - Replaced deprecated `WebRequest` with `HttpClient` to eliminate SYSLIB0014 warnings
+- **Improved test reliability** - removed hardcoded SD card paths from test fixtures
 
 ### Legal & Licensing
 - MIT License for Teddy codebase
