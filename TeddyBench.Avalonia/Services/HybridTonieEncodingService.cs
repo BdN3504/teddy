@@ -56,62 +56,87 @@ public class HybridTonieEncodingService
             return (generatedAudio.FileContent, resultHash);
         }
 
-        // LOSSLESS APPROACH: Extract raw Ogg data without re-encoding
+        // HYBRID APPROACH: Extract raw Ogg data for original tracks, re-encode new tracks
         var originalAudio = TonieAudio.FromFile(originalTonieFilePath, readAudio: true);
         List<byte[]> rawChapterData = originalAudio.ExtractRawChapterData();
 
         try
         {
-            // Build list of all track Ogg data in correct order
-            var allTrackOggData = new List<byte[]>();
+            // Check if we have any new (non-original) tracks
+            bool hasNewTracks = tracks.Any(t => !t.IsOriginal);
 
-            for (int i = 0; i < tracks.Count; i++)
+            if (hasNewTracks)
             {
-                var track = tracks[i];
+                // If we have new tracks, we need to re-encode everything together
+                // because we can't losslessly manipulate Opus packet timing for fresh encodes
+                var allFilePaths = new List<string>();
+                for (int i = 0; i < tracks.Count; i++)
+                {
+                    var track = tracks[i];
+                    if (track.IsOriginal && track.OriginalTrackIndex >= 0 && track.OriginalTrackIndex < rawChapterData.Count)
+                    {
+                        // Extract original track to a temp file
+                        string tempFile = Path.GetTempFileName() + ".ogg";
+                        originalAudio.WriteChapterToFile(rawChapterData[track.OriginalTrackIndex], tempFile, track.OriginalTrackIndex);
+                        allFilePaths.Add(tempFile);
+                    }
+                    else
+                    {
+                        // Use new track file path directly
+                        allFilePaths.Add(track.AudioFilePath!);
+                    }
+                }
 
-                if (track.IsOriginal && track.OriginalTrackIndex >= 0 && track.OriginalTrackIndex < rawChapterData.Count)
+                // Re-encode all tracks together
+                TonieAudio combinedAudio = new TonieAudio(allFilePaths.ToArray(), audioId, bitRate * 1000, false, null, callback);
+
+                // Clean up temp files
+                foreach (var file in allFilePaths)
                 {
-                    // Use raw chapter data (already encoded, no quality loss!)
-                    // Update stream serial number to match our audio ID
-                    // Note: resetGranulePositions = true because extracted chapters have cumulative granules from original file
-                    var tempAudio = new TonieAudio();
-                    tempAudio.Audio = rawChapterData[track.OriginalTrackIndex];
-                    byte[] updatedOggData = tempAudio.UpdateStreamSerialNumber(audioId, resetGranulePositions: true);
-                    allTrackOggData.Add(updatedOggData);
+                    if (file.Contains(Path.GetTempPath()))
+                    {
+                        try { File.Delete(file); } catch { }
+                    }
                 }
-                else
-                {
-                    // Encode new track with same audio ID
-                    TonieAudio newTrackAudio = new TonieAudio(new[] { track.AudioFilePath! }, audioId, bitRate * 1000, false, null, callback);
-                    // Extract just the audio data (Ogg stream)
-                    allTrackOggData.Add(newTrackAudio.Audio);
-                }
+
+                string resultHash = BitConverter.ToString(combinedAudio.Header.Hash).Replace("-", "");
+                return (combinedAudio.FileContent, resultHash);
             }
+            else
+            {
+                // All tracks are original - use pure lossless approach
+                var allTrackOggData = new List<byte[]>();
+                for (int i = 0; i < tracks.Count; i++)
+                {
+                    var track = tracks[i];
+                    allTrackOggData.Add(rawChapterData[track.OriginalTrackIndex]);
+                }
 
-            // Combine all tracks losslessly using proper Ogg page manipulation
-            var (audioData, hash, chapterMarkers) = TonieAudio.CombineOggTracksLossless(allTrackOggData, audioId);
+                // Combine all tracks losslessly using proper Ogg page manipulation
+                var (audioData, hash, chapterMarkers) = TonieAudio.CombineOggTracksLossless(allTrackOggData, audioId);
 
-            // Build final Tonie file with header
-            byte[] fileContent = new byte[audioData.Length + 0x1000];
-            Array.Copy(audioData, 0, fileContent, 0x1000, audioData.Length);
+                // Build final Tonie file with header
+                byte[] fileContent = new byte[audioData.Length + 0x1000];
+                Array.Copy(audioData, 0, fileContent, 0x1000, audioData.Length);
 
-            // Create and write header
-            var tonieAudio = new TonieAudio();
-            tonieAudio.FileContent = fileContent;
-            tonieAudio.Audio = audioData;
-            tonieAudio.Header.Hash = hash;
-            tonieAudio.Header.AudioLength = audioData.Length;
-            tonieAudio.Header.AudioId = audioId;
-            tonieAudio.Header.AudioChapters = chapterMarkers;
-            tonieAudio.Header.Padding = new byte[0];
-            tonieAudio.UpdateFileContent();
+                // Create and write header
+                var tonieAudio = new TonieAudio();
+                tonieAudio.FileContent = fileContent;
+                tonieAudio.Audio = audioData;
+                tonieAudio.Header.Hash = hash;
+                tonieAudio.Header.AudioLength = audioData.Length;
+                tonieAudio.Header.AudioId = audioId;
+                tonieAudio.Header.AudioChapters = chapterMarkers;
+                tonieAudio.Header.Padding = new byte[0];
+                tonieAudio.UpdateFileContent();
 
-            string resultHash = BitConverter.ToString(hash).Replace("-", "");
-            return (tonieAudio.FileContent, resultHash);
+                string resultHash = BitConverter.ToString(hash).Replace("-", "");
+                return (tonieAudio.FileContent, resultHash);
+            }
         }
         catch (Exception ex)
         {
-            // If lossless approach fails, provide helpful error message
+            // If hybrid approach fails, provide helpful error message
             throw new Exception($"Failed to encode hybrid tonie: {ex.Message}", ex);
         }
     }

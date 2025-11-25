@@ -843,6 +843,8 @@ namespace TonieFile
             // Write each page with renumbered sequence and updated stream ID
             int pagesWritten = 0;
             int pagesSkipped = 0;
+            ulong actualLastGranuleWritten = 0;  // Track the actual maximum granule we write
+
             foreach (var page in pages)
             {
                 // Skip header pages (OpusHead, OpusTags) - they're already in the stream
@@ -868,41 +870,40 @@ namespace TonieFile
 
                 // Adjust granule position for continuity
                 // Natural starting granule for Opus streams from Concentus encoder (~14400)
-                // Normalized tracks from ExtractRawChapterData() start at 0, so we add this offset
+                // Fresh encoding adds a gap between tracks: 14400 + 1920 = 16320 granules
                 const ulong NATURAL_OPUS_START_GRANULE = 14400;
+                const ulong GAP_BETWEEN_TRACKS = 16320; // Gap that fresh encoding produces
 
                 // Continuation pages (granule = ulong.MaxValue) are never adjusted
                 if (header.GranulePosition != ulong.MaxValue && firstGranule != ulong.MaxValue)
                 {
                     if (cumulativeGranule > 0)
                     {
-                        // Subsequent tracks: add cumulative offset + natural starting offset
-                        // This matches fresh encoding behavior and avoids zero-duration pages
+                        // Subsequent tracks: add gap to match fresh encoding behavior
+                        // Hardware expects 16320 granule gap between tracks
+                        // Subtract the track's starting offset to make it relative, then add cumulative + gap
                         if (header.GranulePosition >= firstGranule)
                         {
-                            // For normalized tracks (firstGranule near 0): add full offset
-                            // For original tracks (firstGranule ~= 14400): preserve existing behavior
-                            if (firstGranule < 1000)
-                            {
-                                // Normalized: shift to cumulative position + natural offset
-                                header.GranulePosition = header.GranulePosition + cumulativeGranule + NATURAL_OPUS_START_GRANULE;
-                            }
-                            else
-                            {
-                                // Original: just add cumulative (offset already present)
-                                header.GranulePosition = header.GranulePosition + cumulativeGranule;
-                            }
+                            // Make granule relative to track start (0-based), then add cumulative + gap
+                            header.GranulePosition = (header.GranulePosition - firstGranule) + cumulativeGranule + GAP_BETWEEN_TRACKS;
                         }
                     }
                     else
                     {
-                        // First track: add natural offset if normalized (starts at 0)
+                        // First track: keep as-is if it has natural offset, otherwise add it
                         if (firstGranule < 1000 && header.GranulePosition >= firstGranule)
                         {
+                            // Normalized track starting at 0: add natural offset
                             header.GranulePosition = header.GranulePosition + NATURAL_OPUS_START_GRANULE;
                         }
-                        // else: Keep original granules for fresh encoding (already has natural offset)
+                        // else: Keep original granules (already has natural offset ~14400)
                     }
+                }
+
+                // Track the actual maximum granule position we're writing
+                if (header.GranulePosition != ulong.MaxValue && header.GranulePosition > actualLastGranuleWritten)
+                {
+                    actualLastGranuleWritten = header.GranulePosition;
                 }
 
                 // Assign the modified header back to the page
@@ -969,40 +970,8 @@ namespace TonieFile
             }
 
             // Return the new page index and the ending cumulative granule position
-            // Need to account for the NATURAL_OPUS_START_GRANULE offset we added
-            const ulong NATURAL_OPUS_START_GRANULE_FOR_CALC = 14400;
-            ulong newCumulativeGranule;
-
-            if (cumulativeGranule == 0)
-            {
-                // First track: we added NATURAL_OPUS_START_GRANULE if normalized
-                if (firstGranule < 1000)
-                {
-                    // Normalized track: lastGranule + offset
-                    newCumulativeGranule = lastGranule + NATURAL_OPUS_START_GRANULE_FOR_CALC;
-                }
-                else
-                {
-                    // Original track: already has offset
-                    newCumulativeGranule = lastGranule;
-                }
-            }
-            else
-            {
-                // Subsequent tracks: we added cumulative + offset if normalized
-                if (firstGranule < 1000)
-                {
-                    // Normalized track: lastGranule + cumulative + offset
-                    newCumulativeGranule = lastGranule + cumulativeGranule + NATURAL_OPUS_START_GRANULE_FOR_CALC;
-                }
-                else
-                {
-                    // Original track: just add cumulative
-                    newCumulativeGranule = lastGranule + cumulativeGranule;
-                }
-            }
-
-            return (currentPageSeq, newCumulativeGranule);
+            // Use the actual maximum granule we wrote, not the original lastGranule
+            return (currentPageSeq, actualLastGranuleWritten);
         }
 
         /// <summary>
@@ -1975,21 +1944,25 @@ namespace TonieFile
                     // Calculate granule offset for this track
                     // We need to adjust granule positions to be cumulative across tracks
                     ulong trackStartGranule = cumulativeGranule;
-                    ulong trackMaxGranule = 0;
-
-                    // Find the maximum granule in this track to know the track duration
-                    foreach (var page in dataPages)
-                    {
-                        if (page.Header.GranulePosition > trackMaxGranule)
-                        {
-                            trackMaxGranule = page.Header.GranulePosition;
-                        }
-                    }
+                    ulong actualMaxGranuleWritten = 0; // Track the actual maximum granule we write
 
                     // Natural starting granule for Opus streams from Concentus encoder
                     // This is the granule position of the first data page in a fresh encode (~14400)
-                    // Normalized tracks start at 0, so we add this offset to match fresh encoding
+                    // Fresh encoding adds a gap between tracks: 14400 + 1920 = 16320 granules
                     const ulong NATURAL_OPUS_START_GRANULE = 14400;
+                    const ulong GAP_BETWEEN_TRACKS = 16320; // Gap that fresh encoding produces
+
+                    // Find the first valid granule in this track's data pages
+                    // We need this to normalize tracks (make them 0-based) before adding cumulative offset
+                    ulong trackFirstGranule = ulong.MaxValue;
+                    foreach (var page in dataPages)
+                    {
+                        if (page.Header.GranulePosition != ulong.MaxValue &&
+                            page.Header.GranulePosition < trackFirstGranule)
+                        {
+                            trackFirstGranule = page.Header.GranulePosition;
+                        }
+                    }
 
                     // Write data pages with updated metadata
                     foreach (var page in dataPages)
@@ -2006,23 +1979,31 @@ namespace TonieFile
                         header.PageSequenceNumber = pageSeq++;
 
                         // Update granule position for continuity
-                        // Tracks come in normalized (starting from 0), so we need to add appropriate offsets
-                        // For first track: add natural starting offset to match fresh encoding
-                        // For subsequent tracks: add cumulative offset + gap to match fresh encoding
-                        if (header.GranulePosition != ulong.MaxValue)
+                        // All tracks (normalized or fresh) need the same gap structure as fresh encoding
+                        // Subtract track's starting granule to make it 0-based, then add cumulative + gap
+                        if (header.GranulePosition != ulong.MaxValue && trackFirstGranule != ulong.MaxValue)
                         {
                             if (trackIdx == 0)
                             {
-                                // First track: add back the natural starting granule
-                                // Normalized: 0-473280, After: 14400-487680 (matches fresh encoding)
-                                header.GranulePosition = header.GranulePosition + NATURAL_OPUS_START_GRANULE;
+                                // First track: normalize to 0, then add natural starting offset
+                                // Input: 0-473280 (normalized) OR 14400-487680 (fresh)
+                                // Output: 14400-487680 (both cases)
+                                ulong normalizedGranule = header.GranulePosition - trackFirstGranule;
+                                header.GranulePosition = normalizedGranule + NATURAL_OPUS_START_GRANULE;
                             }
                             else
                             {
-                                // Subsequent tracks: add cumulative + gap between tracks
-                                // The gap should match what fresh encoding produces (~16320 granules)
-                                header.GranulePosition = trackStartGranule + NATURAL_OPUS_START_GRANULE + header.GranulePosition;
+                                // Subsequent tracks: normalize to 0, then add cumulative + gap
+                                // Hardware expects 16320 granule gap between tracks (matches fresh encoding)
+                                ulong normalizedGranule = header.GranulePosition - trackFirstGranule;
+                                header.GranulePosition = normalizedGranule + trackStartGranule + GAP_BETWEEN_TRACKS;
                             }
+                        }
+
+                        // Track the actual maximum granule position we're writing
+                        if (header.GranulePosition != ulong.MaxValue && header.GranulePosition > actualMaxGranuleWritten)
+                        {
+                            actualMaxGranuleWritten = header.GranulePosition;
                         }
 
                         // Clear EOS flag (will set it only on the final page later)
@@ -2091,8 +2072,8 @@ namespace TonieFile
                     }
 
                     // Update cumulative granule for next track
-                    // trackMaxGranule is from normalized data, so add the natural offset
-                    cumulativeGranule = trackStartGranule + trackMaxGranule + NATURAL_OPUS_START_GRANULE;
+                    // Use the actual maximum granule we wrote (already includes all offsets)
+                    cumulativeGranule = actualMaxGranuleWritten;
                 }
 
                 // Set EOS flag on the last page

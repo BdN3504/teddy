@@ -640,9 +640,10 @@ namespace TonieAudio.Tests
                 Console.WriteLine($"Extracted {rawChapterData.Count} raw chapters (no decoding!)");
 
                 // Update stream serial numbers to match audio ID (preserves exact encoding)
-                // Note: resetGranulePositions = true because extracted chapters have cumulative granules from original file
-                var track1Updated = new TonieFile.TonieAudio { Audio = rawChapterData[0] }.UpdateStreamSerialNumber(audioId, resetGranulePositions: true);
-                var track2Updated = new TonieFile.TonieAudio { Audio = rawChapterData[1] }.UpdateStreamSerialNumber(audioId, resetGranulePositions: true);
+                // Note: ExtractRawChapterData() already normalizes granules to start at 0,
+                // so we don't need to resetGranulePositions (would cause double-normalization)
+                var track1Updated = new TonieFile.TonieAudio { Audio = rawChapterData[0] }.UpdateStreamSerialNumber(audioId, resetGranulePositions: false);
+                var track2Updated = new TonieFile.TonieAudio { Audio = rawChapterData[1] }.UpdateStreamSerialNumber(audioId, resetGranulePositions: false);
 
                 Console.WriteLine($"Track 1 updated: {track1Updated.Length} bytes (lossless)");
                 Console.WriteLine($"Track 2 updated: {track2Updated.Length} bytes (lossless)");
