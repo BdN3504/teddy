@@ -384,11 +384,12 @@ namespace TonieAudio.Tests
                             pageCount++;
 
                             // Track first and last valid granules
-                            if (granule != 0 && granule != ulong.MaxValue)
+                            // Note: granule 0 is valid (normalized tracks start at 0), only skip continuation pages (ulong.MaxValue)
+                            if (granule != ulong.MaxValue)
                             {
                                 if (firstGranule == ulong.MaxValue) firstGranule = granule;
 
-                                if (lastGranule > 0)
+                                if (lastGranule > 0 || (lastGranule == 0 && firstGranule == 0))
                                 {
                                     Assert.True(granule >= lastGranule,
                                         $"Track {i + 1} page {pageCount}: granule should increase (was {lastGranule}, now {granule})");

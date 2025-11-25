@@ -688,6 +688,9 @@ namespace TonieFile
             Header.Padding = new byte[0];
 
             File.Delete(tempName);
+
+            // Output diagnostic information about track granule positions
+            OutputTrackGranuleDiagnostics(Audio, Header.AudioChapters);
         }
 
         /// <summary>
@@ -812,7 +815,7 @@ namespace TonieFile
             {
                 // Skip header pages and continuation pages
                 // Granule = ulong.MaxValue means continuation page without timestamp
-                // Granule = 0 is VALID (means first audio sample) and should be included
+                // Normalized tracks may start at granule 0, so we must handle that
                 if (pages[i].Header.PageSequenceNumber >= 2 &&
                     pages[i].Header.GranulePosition != ulong.MaxValue)
                 {
@@ -851,26 +854,59 @@ namespace TonieFile
 
                 long posBeforeWrite = outputData.Position;
 
+                // Header is a struct, so we need to get a copy, modify it, and assign it back
+                var header = page.Header;
+
                 // Update the page header
-                page.Header.BitstreamSerialNumber = streamSerial;
-                page.Header.PageSequenceNumber = currentPageSeq++;
+                header.BitstreamSerialNumber = streamSerial;
+                header.PageSequenceNumber = currentPageSeq++;
 
                 // Clear BOS and EOS flags from copied pages
                 // We'll set EOS only on the final page of the entire stream
                 // Preserve bit 0 (continuation flag), clear bits 1 (BOS) and 2 (EOS)
-                page.Header.Type = (byte)(page.Header.Type & 1);
+                header.Type = (byte)(header.Type & 1);
 
                 // Adjust granule position for continuity
-                // Subtract the track's first granule (make relative to 0), then add cumulative offset
-                // Only skip continuation pages (granule = ulong.MaxValue)
-                // Granule = 0 is VALID (first audio sample) and should be adjusted
-                if (page.Header.GranulePosition != ulong.MaxValue && firstGranule != ulong.MaxValue)
+                // Natural starting granule for Opus streams from Concentus encoder (~14400)
+                // Normalized tracks from ExtractRawChapterData() start at 0, so we add this offset
+                const ulong NATURAL_OPUS_START_GRANULE = 14400;
+
+                // Continuation pages (granule = ulong.MaxValue) are never adjusted
+                if (header.GranulePosition != ulong.MaxValue && firstGranule != ulong.MaxValue)
                 {
-                    if (page.Header.GranulePosition >= firstGranule)
+                    if (cumulativeGranule > 0)
                     {
-                        page.Header.GranulePosition = (page.Header.GranulePosition - firstGranule) + cumulativeGranule;
+                        // Subsequent tracks: add cumulative offset + natural starting offset
+                        // This matches fresh encoding behavior and avoids zero-duration pages
+                        if (header.GranulePosition >= firstGranule)
+                        {
+                            // For normalized tracks (firstGranule near 0): add full offset
+                            // For original tracks (firstGranule ~= 14400): preserve existing behavior
+                            if (firstGranule < 1000)
+                            {
+                                // Normalized: shift to cumulative position + natural offset
+                                header.GranulePosition = header.GranulePosition + cumulativeGranule + NATURAL_OPUS_START_GRANULE;
+                            }
+                            else
+                            {
+                                // Original: just add cumulative (offset already present)
+                                header.GranulePosition = header.GranulePosition + cumulativeGranule;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        // First track: add natural offset if normalized (starts at 0)
+                        if (firstGranule < 1000 && header.GranulePosition >= firstGranule)
+                        {
+                            header.GranulePosition = header.GranulePosition + NATURAL_OPUS_START_GRANULE;
+                        }
+                        // else: Keep original granules for fresh encoding (already has natural offset)
                     }
                 }
+
+                // Assign the modified header back to the page
+                page.Header = header;
 
                 // Calculate page size before writing
                 int pageSize;
@@ -933,7 +969,39 @@ namespace TonieFile
             }
 
             // Return the new page index and the ending cumulative granule position
-            ulong newCumulativeGranule = cumulativeGranule + trackDurationGranules;
+            // Need to account for the NATURAL_OPUS_START_GRANULE offset we added
+            const ulong NATURAL_OPUS_START_GRANULE_FOR_CALC = 14400;
+            ulong newCumulativeGranule;
+
+            if (cumulativeGranule == 0)
+            {
+                // First track: we added NATURAL_OPUS_START_GRANULE if normalized
+                if (firstGranule < 1000)
+                {
+                    // Normalized track: lastGranule + offset
+                    newCumulativeGranule = lastGranule + NATURAL_OPUS_START_GRANULE_FOR_CALC;
+                }
+                else
+                {
+                    // Original track: already has offset
+                    newCumulativeGranule = lastGranule;
+                }
+            }
+            else
+            {
+                // Subsequent tracks: we added cumulative + offset if normalized
+                if (firstGranule < 1000)
+                {
+                    // Normalized track: lastGranule + cumulative + offset
+                    newCumulativeGranule = lastGranule + cumulativeGranule + NATURAL_OPUS_START_GRANULE_FOR_CALC;
+                }
+                else
+                {
+                    // Original track: just add cumulative
+                    newCumulativeGranule = lastGranule + cumulativeGranule;
+                }
+            }
+
             return (currentPageSeq, newCumulativeGranule);
         }
 
@@ -1371,6 +1439,9 @@ namespace TonieFile
             Header.Padding = new byte[0];
 
             File.Delete(tempName);
+
+            // Output diagnostic information about track granule positions
+            OutputTrackGranuleDiagnostics(Audio, Header.AudioChapters);
         }
 
         private static float ShortToSample(short pcmValue)
@@ -1556,14 +1627,20 @@ namespace TonieFile
             {
                 MemoryStream memStream = new MemoryStream();
 
-                Header.PageSegments = SegmentTableLength;
-                Header.Checksum = 0;
+                // Header is a struct, so we need to get a copy, modify it, and assign it back
+                var header = Header;
+                header.PageSegments = SegmentTableLength;
+                header.Checksum = 0;
+                Header = header;
+
                 WriteInternal(memStream);
 
                 OggPage.Crc crc = new OggPage.Crc();
                 crc.Update(memStream.ToArray());
 
-                Header.Checksum = crc.Value;
+                header = Header;
+                header.Checksum = crc.Value;
+                Header = header;
                 Size = (int)memStream.Length;
             }
 
@@ -1585,6 +1662,8 @@ namespace TonieFile
         /// Extracts raw Ogg audio data for each chapter/track without decoding.
         /// Returns byte arrays containing the raw Ogg pages for each track.
         /// This allows reusing encoded data without quality loss.
+        /// IMPORTANT: Granule positions are reset to be relative (starting from first page's granule)
+        /// so that extracted tracks can be recombined consistently.
         /// </summary>
         public List<byte[]> ExtractRawChapterData()
         {
@@ -1643,7 +1722,7 @@ namespace TonieFile
                 }
             }
 
-            // Extract chapter data based on found offsets
+            // Extract chapter data and reset granule positions to be relative
             for (int chapter = 0; chapter < Header.AudioChapters.Length; chapter++)
             {
                 int startOffset = chapterOffsets[chapter];
@@ -1659,11 +1738,76 @@ namespace TonieFile
                 {
                     byte[] chapterData = new byte[length];
                     Array.Copy(Audio, startOffset, chapterData, 0, length);
-                    chapters.Add(chapterData);
+
+                    // Reset granule positions to be relative (for consistent recombination)
+                    byte[] normalized = ResetGranulePositionsToRelative(chapterData);
+                    chapters.Add(normalized);
                 }
             }
 
             return chapters;
+        }
+
+        /// <summary>
+        /// Resets granule positions in Ogg data to be relative (starting from first data page's granule).
+        /// This normalizes extracted tracks so they can be recombined consistently with newly encoded tracks.
+        /// </summary>
+        private byte[] ResetGranulePositionsToRelative(byte[] oggData)
+        {
+            List<OggPage> pages = ParseOggPagesFromBytes(oggData);
+
+            if (pages.Count == 0)
+            {
+                return oggData;
+            }
+
+            // Find the MINIMUM granule position across all data pages (the baseline to subtract)
+            // We must scan ALL pages, not just break on first, because chapter markers
+            // may point to continuation pages (granule = ulong.MaxValue)
+            ulong firstGranule = ulong.MaxValue;
+            foreach (var page in pages)
+            {
+                if (page.Header.PageSequenceNumber >= 2 &&
+                    page.Header.GranulePosition != ulong.MaxValue)
+                {
+                    if (page.Header.GranulePosition < firstGranule)
+                    {
+                        firstGranule = page.Header.GranulePosition;
+                    }
+                }
+            }
+
+            if (firstGranule == ulong.MaxValue)
+            {
+                // No valid granule found, return as-is
+                return oggData;
+            }
+
+            // Adjust all granule positions to be relative (starting from 0)
+            // CombineOggTracksLossless will add the appropriate offset for each track
+            foreach (var page in pages)
+            {
+                if (page.Header.PageSequenceNumber >= 2 &&
+                    page.Header.GranulePosition != ulong.MaxValue &&
+                    page.Header.GranulePosition >= firstGranule)
+                {
+                    // Header is a struct, so we need to get a copy, modify it, and assign it back
+                    var header = page.Header;
+                    // Normalize to start at 0
+                    header.GranulePosition = header.GranulePosition - firstGranule;
+                    page.Header = header;
+                }
+            }
+
+            // Write pages back to a byte array
+            using (MemoryStream output = new MemoryStream())
+            {
+                foreach (var page in pages)
+                {
+                    page.Write(output);
+                }
+                return output.ToArray();
+            }
         }
 
         /// <summary>
@@ -1698,16 +1842,22 @@ namespace TonieFile
             // Update stream serial number and optionally reset granule positions in each page
             foreach (var page in pages)
             {
-                page.Header.BitstreamSerialNumber = newAudioId;
+                // Header is a struct, so we need to get a copy, modify it, and assign it back
+                var header = page.Header;
+                header.BitstreamSerialNumber = newAudioId;
 
-                // Reset granule positions to start from 0 (for combining tracks)
+                // Reset granule positions to be relative (starting from 0)
+                // CombineOggTracksLossless will add the appropriate offset for each track
                 if (resetGranulePositions && !IsMeta(page))
                 {
-                    if (page.Header.GranulePosition != ulong.MaxValue && page.Header.GranulePosition >= granuleOffset)
+                    if (header.GranulePosition != ulong.MaxValue && header.GranulePosition >= granuleOffset)
                     {
-                        page.Header.GranulePosition -= granuleOffset;
+                        // Normalize to start at 0
+                        header.GranulePosition = header.GranulePosition - granuleOffset;
                     }
                 }
+
+                page.Header = header;
             }
 
             // Write all pages to a memory stream
@@ -1836,22 +1986,50 @@ namespace TonieFile
                         }
                     }
 
+                    // Natural starting granule for Opus streams from Concentus encoder
+                    // This is the granule position of the first data page in a fresh encode (~14400)
+                    // Normalized tracks start at 0, so we add this offset to match fresh encoding
+                    const ulong NATURAL_OPUS_START_GRANULE = 14400;
+
                     // Write data pages with updated metadata
                     foreach (var page in dataPages)
                     {
                         long posBeforeWrite = output.Position;
 
+                        // OggPageHeader is a struct, so we need to get a copy, modify it, and assign it back
+                        var header = page.Header;
+
                         // Update stream serial number
-                        page.Header.BitstreamSerialNumber = audioId;
+                        header.BitstreamSerialNumber = audioId;
 
                         // Update page sequence number
-                        page.Header.PageSequenceNumber = pageSeq++;
+                        header.PageSequenceNumber = pageSeq++;
 
-                        // Update granule position (make cumulative)
-                        page.Header.GranulePosition = trackStartGranule + page.Header.GranulePosition;
+                        // Update granule position for continuity
+                        // Tracks come in normalized (starting from 0), so we need to add appropriate offsets
+                        // For first track: add natural starting offset to match fresh encoding
+                        // For subsequent tracks: add cumulative offset + gap to match fresh encoding
+                        if (header.GranulePosition != ulong.MaxValue)
+                        {
+                            if (trackIdx == 0)
+                            {
+                                // First track: add back the natural starting granule
+                                // Normalized: 0-473280, After: 14400-487680 (matches fresh encoding)
+                                header.GranulePosition = header.GranulePosition + NATURAL_OPUS_START_GRANULE;
+                            }
+                            else
+                            {
+                                // Subsequent tracks: add cumulative + gap between tracks
+                                // The gap should match what fresh encoding produces (~16320 granules)
+                                header.GranulePosition = trackStartGranule + NATURAL_OPUS_START_GRANULE + header.GranulePosition;
+                            }
+                        }
 
                         // Clear EOS flag (will set it only on the final page later)
-                        page.Header.Type &= 0xFB; // Clear bit 2 (EOS flag)
+                        header.Type &= 0xFB; // Clear bit 2 (EOS flag)
+
+                        // Assign the modified header back to the page
+                        page.Header = header;
 
                         // Calculate page size before writing
                         int pageSize;
@@ -1913,7 +2091,8 @@ namespace TonieFile
                     }
 
                     // Update cumulative granule for next track
-                    cumulativeGranule = trackStartGranule + trackMaxGranule;
+                    // trackMaxGranule is from normalized data, so add the natural offset
+                    cumulativeGranule = trackStartGranule + trackMaxGranule + NATURAL_OPUS_START_GRANULE;
                 }
 
                 // Set EOS flag on the last page
@@ -1924,6 +2103,10 @@ namespace TonieFile
                 // Compute hash
                 using var hashProvider = SHA1.Create();
                 byte[] hash = hashProvider.ComputeHash(audioData);
+
+                // Output diagnostic information about track granule positions
+                var tempInstance = new TonieAudio();
+                tempInstance.OutputTrackGranuleDiagnostics(audioData, chapterMarkers.ToArray());
 
                 return (audioData, hash, chapterMarkers.ToArray());
             }
@@ -2214,6 +2397,126 @@ namespace TonieFile
                     return true;
                 default:
                     return false;
+            }
+        }
+
+        /// <summary>
+        /// Outputs diagnostic information about track granule positions for debugging.
+        /// Shows track count, granule positions, durations, and overall statistics.
+        /// </summary>
+        private void OutputTrackGranuleDiagnostics(byte[] audioData, uint[] chapters)
+        {
+            Console.WriteLine("\n=== Track Granule Diagnostics ===");
+            Console.WriteLine($"Total tracks: {chapters.Length}");
+
+            // Parse all Ogg pages from the audio data
+            List<OggPage> allPages = ParseOggPagesFromBytes(audioData);
+
+            // Filter out meta pages (OpusHead, OpusTags) and get only data pages
+            List<OggPage> dataPages = new List<OggPage>();
+            foreach (var page in allPages)
+            {
+                if (!IsMeta(page))
+                {
+                    dataPages.Add(page);
+                }
+            }
+
+            if (dataPages.Count == 0)
+            {
+                Console.WriteLine("WARNING: No data pages found in audio stream");
+                return;
+            }
+
+            // For each track, find the granule positions
+            ulong maxGranule = 0;
+            for (int trackIdx = 0; trackIdx < chapters.Length; trackIdx++)
+            {
+                uint startPageSeq = chapters[trackIdx];
+                uint endPageSeq = (trackIdx < chapters.Length - 1) ? chapters[trackIdx + 1] : uint.MaxValue;
+
+                // Find pages for this track
+                List<OggPage> trackPages = new List<OggPage>();
+                foreach (var page in dataPages)
+                {
+                    if (page.Header.PageSequenceNumber >= startPageSeq &&
+                        (endPageSeq == uint.MaxValue || page.Header.PageSequenceNumber < endPageSeq))
+                    {
+                        trackPages.Add(page);
+                    }
+                }
+
+                if (trackPages.Count == 0)
+                {
+                    Console.WriteLine($"Track {trackIdx + 1}: No pages found (chapter marker: {startPageSeq})");
+                    continue;
+                }
+
+                // Find first and last granule positions (skip continuation pages with ulong.MaxValue)
+                ulong firstGranule = ulong.MaxValue;
+                ulong lastGranule = 0;
+
+                foreach (var page in trackPages)
+                {
+                    if (page.Header.GranulePosition != ulong.MaxValue)
+                    {
+                        if (firstGranule == ulong.MaxValue || page.Header.GranulePosition < firstGranule)
+                        {
+                            firstGranule = page.Header.GranulePosition;
+                        }
+                        if (page.Header.GranulePosition > lastGranule)
+                        {
+                            lastGranule = page.Header.GranulePosition;
+                        }
+                    }
+                }
+
+                if (lastGranule > maxGranule)
+                {
+                    maxGranule = lastGranule;
+                }
+
+                // Calculate duration
+                ulong trackGranules = (firstGranule != ulong.MaxValue && lastGranule >= firstGranule)
+                    ? (lastGranule - firstGranule)
+                    : 0;
+                double trackDurationSeconds = trackGranules / 48000.0;
+
+                Console.WriteLine($"Track {trackIdx + 1}:");
+                Console.WriteLine($"  Chapter marker (page seq): {startPageSeq}");
+                Console.WriteLine($"  First granule: {firstGranule}");
+                Console.WriteLine($"  Last granule: {lastGranule}");
+                Console.WriteLine($"  Track granules: {trackGranules}");
+                Console.WriteLine($"  Track duration: {trackDurationSeconds:F2} seconds ({FormatDuration(trackDurationSeconds)})");
+                Console.WriteLine($"  Page count: {trackPages.Count}");
+            }
+
+            // Overall statistics
+            double totalDurationSeconds = maxGranule / 48000.0;
+            Console.WriteLine($"\nOverall statistics:");
+            Console.WriteLine($"  Highest granule position: {maxGranule}");
+            Console.WriteLine($"  Total duration: {totalDurationSeconds:F2} seconds ({FormatDuration(totalDurationSeconds)})");
+            Console.WriteLine($"  Total data pages: {dataPages.Count}");
+            Console.WriteLine("=================================\n");
+        }
+
+        /// <summary>
+        /// Formats duration in seconds to a human-readable string (m:ss or h:mm:ss).
+        /// </summary>
+        private static string FormatDuration(double seconds)
+        {
+            int totalSecs = (int)seconds;
+            int hours = totalSecs / 3600;
+            int minutes = (totalSecs % 3600) / 60;
+            int secs = totalSecs % 60;
+
+            if (hours > 0)
+            {
+                return $"{hours}:{minutes:D2}:{secs:D2}";
+            }
+            else
+            {
+                return $"{minutes}:{secs:D2}";
             }
         }
 
