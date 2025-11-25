@@ -43,6 +43,7 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Automatic title generation from source folder name
   - Custom metadata management via customTonies.json
   - **Lossless Tonie Modification** - when adding tracks to existing Tonies, the system now uses efficient in-place editing that preserves the original audio encoding without decoding and re-encoding
+  - **Audio ID Modification for Modified Tonies** - when modifying official Tonies, users can now specify a custom Audio ID to enable hardware playback, with automatic validation to prevent conflicts with official tonie ID ranges
 
 - **LIVE Flag Management**
   - Visual [LIVE] indicator for flagged files
@@ -134,6 +135,8 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
 - Replaced deprecated `Thread.Abort()` for .NET 8.0 compatibility
 - Replaced deprecated `WebRequest` with `HttpClient` to eliminate SYSLIB0014 warnings
 - **Improved test reliability** - removed hardcoded SD card paths from test fixtures
+- **Fixed granule position handling for normalized tracks** - resolved critical bugs causing incorrect track durations when mixing pre-encoded and new tracks in lossless modification workflow
+- **Added consistent line ending handling** - implemented .gitattributes for cross-platform development consistency with LF normalization
 
 ### Legal & Licensing
 - MIT License for Teddy codebase
