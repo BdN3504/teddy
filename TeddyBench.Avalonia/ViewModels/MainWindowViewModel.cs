@@ -1926,17 +1926,25 @@ public partial class MainWindowViewModel : ViewModelBase
 
             string oldHash = BitConverter.ToString(originalAudio.Header.Hash).Replace("-", "");
             uint audioId = originalAudio.Header.AudioId;
+            uint? newAudioId = null; // Will be set if user changes it in the dialog
 
             // Check if this is a non-custom tonie and show warning
             if (!file.IsCustomTonie)
             {
-                var confirmDialog = new ConfirmModifyTonieDialog(file.DisplayName);
+                var confirmDialog = new ConfirmModifyTonieDialog(file.DisplayName, audioId);
                 var confirmResult = await confirmDialog.ShowDialog<bool?>(_window);
 
                 if (confirmResult != true)
                 {
                     StatusText = "Modification cancelled";
                     return;
+                }
+
+                // Get the new audio ID from the dialog
+                var viewModel = confirmDialog.DataContext as ConfirmModifyTonieDialogViewModel;
+                if (viewModel?.NewAudioId.HasValue == true)
+                {
+                    newAudioId = viewModel.NewAudioId.Value;
                 }
             }
 
@@ -2065,8 +2073,39 @@ public partial class MainWindowViewModel : ViewModelBase
                     var (fileContent, hash) = hybridEncoder.EncodeHybridTonie(trackSources, audioId, file.FilePath, 96, encodeCallback);
                     newHash = hash;
 
-                    // Overwrite the original file
+                    // Overwrite the original file with the encoded content
                     File.WriteAllBytes(file.FilePath, fileContent);
+
+                    // If the audio ID needs to be changed (for official tonies), update the stream serial number
+                    if (newAudioId.HasValue && newAudioId.Value != audioId)
+                    {
+                        StatusText = $"Updating Audio ID to {newAudioId.Value:X8}...";
+
+                        // Load the newly written tonie file
+                        var modifiedTonie = TonieAudio.FromFile(file.FilePath);
+
+                        // Update the stream serial number in the Ogg stream
+                        byte[] updatedAudio = modifiedTonie.UpdateStreamSerialNumber(newAudioId.Value);
+
+                        // Update the header with the new audio ID
+                        modifiedTonie.Header.AudioId = newAudioId.Value;
+
+                        // Rebuild the file content with the updated audio and header
+                        modifiedTonie.Audio = updatedAudio;
+                        modifiedTonie.FileContent = new byte[updatedAudio.Length + 0x1000];
+                        Array.Copy(updatedAudio, 0, modifiedTonie.FileContent, 0x1000, updatedAudio.Length);
+                        modifiedTonie.UpdateFileContent();
+
+                        // Write the updated file
+                        File.WriteAllBytes(file.FilePath, modifiedTonie.FileContent);
+
+                        // Recalculate hash with the new audio data
+                        using (var sha1 = System.Security.Cryptography.SHA1.Create())
+                        {
+                            byte[] newHashBytes = sha1.ComputeHash(updatedAudio);
+                            newHash = BitConverter.ToString(newHashBytes).Replace("-", "");
+                        }
+                    }
 
                     // Notify completion
                     progressViewModel.Complete();

@@ -12,9 +12,9 @@ public partial class ConfirmModifyTonieDialog : Window
         InitializeComponent();
     }
 
-    public ConfirmModifyTonieDialog(string tonieName) : this()
+    public ConfirmModifyTonieDialog(string tonieName, uint currentAudioId) : this()
     {
-        DataContext = new ConfirmModifyTonieDialogViewModel(tonieName);
+        DataContext = new ConfirmModifyTonieDialogViewModel(tonieName, currentAudioId);
 
         // Note: Alt+C and Alt+N are handled by button mnemonics automatically
     }
