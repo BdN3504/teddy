@@ -21,7 +21,8 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
     - Arrow keys for navigating between Tonies
     - Space bar to play/pause audio
     - Context menu accessible via keyboard (Menu key or Shift+F10)
-    - Alt-key shortcuts for all menu items (e.g., Alt+H for Help)
+    - **Mnemonic access mode** - press Alt once to activate mnemonic mode, then press underlined letter to trigger actions (e.g., H for Help)
+    - Press Alt again to exit mnemonic mode
     - Automatic focus on first Tonie after directory load
   - **Help System**
     - Built-in help dialog with hotkey reference
@@ -43,7 +44,12 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Automatic title generation from source folder name
   - Custom metadata management via customTonies.json
   - **Lossless Tonie Modification** - when adding tracks to existing Tonies, the system now uses efficient in-place editing that preserves the original audio encoding without decoding and re-encoding
-  - **Audio ID Modification for Modified Tonies** - when modifying official Tonies, users can now specify a custom Audio ID to enable hardware playback, with automatic validation to prevent conflicts with official tonie ID ranges
+  - **Audio ID Modification** - users can now change the Audio ID for any Tonie (custom or official)
+    - Unified base class for audio ID management across all dialogs
+    - Choose between custom Tonie format (timestamp + 0x50000000 offset) or official Tonie format (integer range 0-99999999)
+    - Prevents conflicts with official Tonie ID ranges when creating custom Tonies
+    - Smart restoration: TRASHCAN recovery automatically uses saved Audio ID from customTonies.json when available
+    - **Correct custom Tonie Audio ID format** - implements proper timestamp-based ID generation for custom Tonies
 
 - **LIVE Flag Management**
   - Visual [LIVE] indicator for flagged files
@@ -108,6 +114,8 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - Audio playback validation including shuffled track order (EndToEndWorkflowTests.cs)
 
 ### Bug Fixes
+- **Fixed mnemonic key behavior** - keyboard shortcuts now work correctly in mnemonic mode without interfering with search functionality
+- **Fixed custom Tonie Audio ID format** - corrected timestamp-based ID generation algorithm for proper custom Tonie creation
 - **Fixed critical Audio ID and hash generation behavior** ⚠️ IMPORTANT
   - Audio ID (timestamp) is now correctly used as Ogg logical stream serial number for hardware compatibility
   - Toniebox hardware expects Stream Serial == Audio ID in the Ogg stream
