@@ -73,7 +73,7 @@
         </StackPanel>
 
         <TextBox Grid.Row="11"
-                 Text="{Binding AudioIdTimestamp}"
+                 Text="{Binding AudioIdInput}"
                  MaxLength="10"
                  Watermark="e.g., 1684838575"
                  FontFamily="Consolas, Courier New, monospace"

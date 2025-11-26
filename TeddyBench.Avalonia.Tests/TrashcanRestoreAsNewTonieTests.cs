@@ -25,7 +25,7 @@ public class TrashcanRestoreAsNewTonieTests : IDisposable
     private readonly string _trashcanDir;
     private readonly string _customTonieJsonPath;
 
-    public TrashcanRestoreAsNewCustomTonieTests()
+    public TrashcanRestoreAsNewTonieTests()
     {
         // Set up test directory structure
         _testDir = Path.Combine(Path.GetTempPath(), $"TeddyBench_RestoreAsNewCustomTonie_Test_{Guid.NewGuid():N}");

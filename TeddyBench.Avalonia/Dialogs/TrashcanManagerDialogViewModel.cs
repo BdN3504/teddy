@@ -244,17 +244,38 @@ public partial class TrashcanManagerDialogViewModel : ObservableObject
             return;
         }
 
-        // Parse the Audio ID from hex string (format: "0x12345678")
-        uint currentAudioId = 0;
-        if (!string.IsNullOrEmpty(SelectedTonie.AudioId) && SelectedTonie.AudioId.StartsWith("0x"))
+        // Try to retrieve the ORIGINAL Audio ID from metadata (tonies.json or customTonies.json)
+        // NOTE: SelectedTonie.AudioId contains the DELETION TIMESTAMP, NOT the original Audio ID!
+        uint originalAudioId = 0;
+
+        // First check official tonies database
+        var officialTonie = _metadataService.GetTonieByHash(SelectedTonie.Hash);
+        if (officialTonie != null && officialTonie.AudioId != null && officialTonie.AudioId.Count > 0)
         {
-            uint.TryParse(SelectedTonie.AudioId.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out currentAudioId);
+            // Parse Audio ID from tonies.json (stored as decimal string)
+            uint.TryParse(officialTonie.AudioId[0], out originalAudioId);
+        }
+        else
+        {
+            // Check custom tonies database
+            var customMetadata = _metadataService.GetCustomTonieMetadata(SelectedTonie.Hash);
+            if (customMetadata != null && customMetadata.AudioId != null && customMetadata.AudioId.Count > 0)
+            {
+                // Parse Audio ID from customTonies.json (stored as decimal string)
+                uint.TryParse(customMetadata.AudioId[0], out originalAudioId);
+            }
+        }
+
+        // If we still don't have an Audio ID (originalAudioId == 0), use current timestamp as fallback
+        if (originalAudioId == 0)
+        {
+            originalAudioId = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         }
 
         // Show restore dialog to get RFID, title, and Audio ID
         var restoreDialog = new RestoreAsNewTonieDialog
         {
-            DataContext = new RestoreAsNewTonieDialogViewModel(_window, SelectedTonie.DisplayName, currentAudioId)
+            DataContext = new RestoreAsNewTonieDialogViewModel(_window, SelectedTonie.DisplayName, originalAudioId)
         };
 
         await restoreDialog.ShowDialog(_window);
