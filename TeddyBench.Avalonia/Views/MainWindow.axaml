@@ -300,13 +300,48 @@
                     <Border Height="1"
                             Background="#CCCCCC"
                             Margin="0,10,10,10"
-                            IsVisible="{Binding SelectedFileDetails, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                            IsVisible="{Binding HasDetailedInfo}"/>
 
                     <!-- Detailed Tonie Info (shown only after clicking "Show Info") -->
-                    <TextBlock Text="{Binding SelectedFileDetails}"
-                               TextWrapping="Wrap"
-                               FontFamily="Consolas,Courier New,monospace"
-                               IsVisible="{Binding SelectedFileDetails, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"/>
+                    <!-- Audio ID with Copy Button -->
+                    <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding HasDetailedInfo}">
+                        <TextBlock Text="Audio ID:" Width="120"/>
+                        <TextBlock Text="{Binding CurrentAudioId}" VerticalAlignment="Center"/>
+                        <Button Command="{Binding CopyAudioIdCommand}"
+                                Background="Transparent"
+                                BorderThickness="0"
+                                Padding="4"
+                                VerticalAlignment="Center"
+                                ToolTip.Tip="Copy Audio ID to clipboard">
+                            <PathIcon Data="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"
+                                      Width="16"
+                                      Height="16"/>
+                        </Button>
+                    </StackPanel>
+
+                    <!-- Audio Length -->
+                    <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding HasDetailedInfo}">
+                        <TextBlock Text="Audio Length:" Width="120"/>
+                        <TextBlock Text="{Binding AudioLength}"/>
+                    </StackPanel>
+
+                    <!-- Chapters -->
+                    <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding HasDetailedInfo}">
+                        <TextBlock Text="Chapters:" Width="120"/>
+                        <TextBlock Text="{Binding ChaptersCount}"/>
+                    </StackPanel>
+
+                    <!-- Hash -->
+                    <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding HasDetailedInfo}">
+                        <TextBlock Text="Hash:" Width="120"/>
+                        <TextBlock Text="{Binding FileHash}" FontFamily="Consolas,Courier New,monospace" TextWrapping="Wrap" MaxWidth="700"/>
+                    </StackPanel>
+
+                    <!-- Hash Valid -->
+                    <StackPanel Orientation="Horizontal" Spacing="5" IsVisible="{Binding HasDetailedInfo}">
+                        <TextBlock Text="Hash Valid:" Width="120"/>
+                        <TextBlock Text="{Binding HashValid}"/>
+                    </StackPanel>
                 </StackPanel>
             </Border>
         </Grid>

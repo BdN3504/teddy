@@ -18,7 +18,7 @@ namespace TeddyBench.Avalonia.Tests;
 /// by updating the stream serial number (Audio ID) without re-encoding the audio.
 /// This preserves the original audio encoding and produces deterministic hashes.
 /// </summary>
-public class TrashcanRestoreAsNewCustomTonieTests : IDisposable
+public class TrashcanRestoreAsNewTonieTests : IDisposable
 {
     private readonly string _testDir;
     private readonly string _contentDir;

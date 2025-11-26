@@ -244,15 +244,22 @@ public partial class TrashcanManagerDialogViewModel : ObservableObject
             return;
         }
 
-        // Show restore dialog to get RFID, title, and Audio ID
-        var restoreDialog = new RestoreAsNewCustomTonieDialog
+        // Parse the Audio ID from hex string (format: "0x12345678")
+        uint currentAudioId = 0;
+        if (!string.IsNullOrEmpty(SelectedTonie.AudioId) && SelectedTonie.AudioId.StartsWith("0x"))
         {
-            DataContext = new RestoreAsNewCustomTonieDialogViewModel(_window, SelectedTonie.DisplayName)
+            uint.TryParse(SelectedTonie.AudioId.Substring(2), System.Globalization.NumberStyles.HexNumber, null, out currentAudioId);
+        }
+
+        // Show restore dialog to get RFID, title, and Audio ID
+        var restoreDialog = new RestoreAsNewTonieDialog
+        {
+            DataContext = new RestoreAsNewTonieDialogViewModel(_window, SelectedTonie.DisplayName, currentAudioId)
         };
 
         await restoreDialog.ShowDialog(_window);
 
-        var viewModel = (RestoreAsNewCustomTonieDialogViewModel)restoreDialog.DataContext;
+        var viewModel = (RestoreAsNewTonieDialogViewModel)restoreDialog.DataContext;
         if (!viewModel.DialogResult)
         {
             StatusText = "Restore cancelled";

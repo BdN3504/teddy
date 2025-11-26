@@ -429,7 +429,7 @@ namespace TeddyBench.Avalonia.Services
                 return (title, hash != null ? GetCachedImage(hash) : null);
             }
 
-            return ($"Audio ID: 0x{audioId:X8}", null);
+            return ($"Audio ID: {audioId}", null);
         }
 
         private string? GetCachedImage(string hash)

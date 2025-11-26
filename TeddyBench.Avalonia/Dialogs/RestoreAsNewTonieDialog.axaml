@@ -4,9 +4,9 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:TeddyBench.Avalonia.Dialogs"
         mc:Ignorable="d" d:DesignWidth="500" d:DesignHeight="350"
-        x:Class="TeddyBench.Avalonia.Dialogs.RestoreAsNewCustomTonieDialog"
-        x:DataType="vm:RestoreAsNewCustomTonieDialogViewModel"
-        Title="Restore as New Custom Tonie"
+        x:Class="TeddyBench.Avalonia.Dialogs.RestoreAsNewTonieDialog"
+        x:DataType="vm:RestoreAsNewTonieDialogViewModel"
+        Title="Restore as New Tonie"
         Width="500" Height="350"
         WindowStartupLocation="CenterOwner"
         CanResize="False">
@@ -49,16 +49,35 @@
 
         <!-- Audio ID Input -->
         <TextBlock Grid.Row="10">
-            <Run Text="Audio ID (optional, hex):"/>
+            <Run Text="Audio ID (Unix timestamp):"/>
             <Run Text=" " />
-            <Run Text="[Leave empty for auto-generated]" FontSize="11" Foreground="Gray"/>
+            <Run Text="[Optional]" FontSize="11" Foreground="Gray"/>
         </TextBlock>
+
+        <!-- Custom Tonie Toggle -->
+        <StackPanel Grid.Row="11" Orientation="Horizontal" Margin="0,5,0,0">
+            <ToggleSwitch IsChecked="{Binding IsCustomTonie}"
+                          OnContent="Custom Tonie"
+                          OffContent="Custom Tonie"
+                          Margin="0,0,10,0"/>
+            <TextBlock Text="(Apply -0x50000000 offset)"
+                       VerticalAlignment="Center"
+                       FontSize="11"
+                       Foreground="Gray"
+                       IsVisible="{Binding IsCustomTonie}"/>
+            <TextBlock Text="(Use timestamp as-is)"
+                       VerticalAlignment="Center"
+                       FontSize="11"
+                       Foreground="Gray"
+                       IsVisible="{Binding !IsCustomTonie}"/>
+        </StackPanel>
+
         <TextBox Grid.Row="11"
-                 Text="{Binding AudioIdHex}"
-                 MaxLength="8"
-                 Watermark="Auto-generated from timestamp"
+                 Text="{Binding AudioIdTimestamp}"
+                 MaxLength="10"
+                 Watermark="e.g., 1684838575"
                  FontFamily="Consolas, Courier New, monospace"
-                 Margin="0,5,0,0"/>
+                 Margin="0,35,0,0"/>
 
         <!-- Buttons -->
         <StackPanel Grid.Row="12"

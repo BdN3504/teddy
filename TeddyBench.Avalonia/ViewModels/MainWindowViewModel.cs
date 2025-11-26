@@ -207,6 +207,24 @@ public partial class MainWindowViewModel : ViewModelBase
     private string _selectedFileDetails = string.Empty;
 
     [ObservableProperty]
+    private string _currentAudioId = string.Empty;
+
+    [ObservableProperty]
+    private string _audioLength = string.Empty;
+
+    [ObservableProperty]
+    private int _chaptersCount = 0;
+
+    [ObservableProperty]
+    private string _fileHash = string.Empty;
+
+    [ObservableProperty]
+    private bool _hashValid = false;
+
+    [ObservableProperty]
+    private bool _hasDetailedInfo = false;
+
+    [ObservableProperty]
     private System.Collections.IList? _selectedItems;
 
     [ObservableProperty]
@@ -230,6 +248,12 @@ public partial class MainWindowViewModel : ViewModelBase
         // Clear detailed info when selecting a new file
         // User must click "Show Info" to see detailed Tonie information
         SelectedFileDetails = string.Empty;
+        CurrentAudioId = string.Empty;
+        AudioLength = string.Empty;
+        ChaptersCount = 0;
+        FileHash = string.Empty;
+        HashValid = false;
+        HasDetailedInfo = false;
 
         OnPropertyChanged(nameof(HasSelectedFile));
     }
@@ -579,11 +603,16 @@ public partial class MainWindowViewModel : ViewModelBase
             audio.CalculateStatistics(out _, out _, out _, out _, out _, out _, out ulong highestGranule);
             string audioDuration = FormatDuration(highestGranule);
 
-            SelectedFileDetails = $"Audio ID: 0x{audio.Header.AudioId:X8}\n" +
-                                $"Audio Length: {audioDuration}\n" +
-                                $"Chapters: {audio.Header.AudioChapters.Length}\n" +
-                                $"Hash: {BitConverter.ToString(audio.Header.Hash).Replace("-", "")}\n" +
-                                $"Hash Valid: {audio.HashCorrect}";
+            // Store the audio ID and other details for UI binding
+            CurrentAudioId = audio.Header.AudioId.ToString();
+            AudioLength = audioDuration;
+            ChaptersCount = audio.Header.AudioChapters.Length;
+            FileHash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
+            HashValid = audio.HashCorrect;
+            HasDetailedInfo = true;
+
+            // Keep the old SelectedFileDetails for backward compatibility (empty now, or can be removed)
+            SelectedFileDetails = string.Empty;
 
             StatusText = "File information loaded";
         }
@@ -591,6 +620,12 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             StatusText = $"Error loading info: {ex.Message}";
             SelectedFileDetails = string.Empty;
+            CurrentAudioId = string.Empty;
+            AudioLength = string.Empty;
+            ChaptersCount = 0;
+            FileHash = string.Empty;
+            HashValid = false;
+            HasDetailedInfo = false;
         }
 
         await Task.CompletedTask;
@@ -942,11 +977,16 @@ public partial class MainWindowViewModel : ViewModelBase
             audio.CalculateStatistics(out _, out _, out _, out _, out _, out _, out ulong highestGranule);
             string audioDuration = FormatDuration(highestGranule);
 
-            SelectedFileDetails = $"Audio ID: 0x{audio.Header.AudioId:X8}\n" +
-                                $"Audio Length: {audioDuration}\n" +
-                                $"Chapters: {audio.Header.AudioChapters.Length}\n" +
-                                $"Hash: {BitConverter.ToString(audio.Header.Hash).Replace("-", "")}\n" +
-                                $"Hash Valid: {audio.HashCorrect}";
+            // Store the audio ID and other details for UI binding
+            CurrentAudioId = audio.Header.AudioId.ToString();
+            AudioLength = audioDuration;
+            ChaptersCount = audio.Header.AudioChapters.Length;
+            FileHash = BitConverter.ToString(audio.Header.Hash).Replace("-", "");
+            HashValid = audio.HashCorrect;
+            HasDetailedInfo = true;
+
+            // Keep the old SelectedFileDetails for backward compatibility (empty now, or can be removed)
+            SelectedFileDetails = string.Empty;
 
             StatusText = "File information loaded";
         }
@@ -954,6 +994,12 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             StatusText = $"Error loading info: {ex.Message}";
             SelectedFileDetails = string.Empty;
+            CurrentAudioId = string.Empty;
+            AudioLength = string.Empty;
+            ChaptersCount = 0;
+            FileHash = string.Empty;
+            HashValid = false;
+            HasDetailedInfo = false;
         }
 
         await Task.CompletedTask;
@@ -2224,6 +2270,30 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 await clipboard.SetTextAsync(directory);
                 StatusText = "Directory path copied to clipboard";
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error copying to clipboard: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task CopyAudioId()
+    {
+        if (string.IsNullOrEmpty(CurrentAudioId))
+        {
+            StatusText = "No Audio ID available. Click 'Show Info' first.";
+            return;
+        }
+
+        try
+        {
+            var clipboard = _window.Clipboard;
+            if (clipboard != null)
+            {
+                await clipboard.SetTextAsync(CurrentAudioId);
+                StatusText = "Audio ID copied to clipboard";
             }
         }
         catch (Exception ex)

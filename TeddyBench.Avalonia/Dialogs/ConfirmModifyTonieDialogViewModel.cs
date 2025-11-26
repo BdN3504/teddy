@@ -19,6 +19,12 @@ public partial class ConfirmModifyTonieDialogViewModel : ObservableObject
     [ObservableProperty]
     private bool _isAudioIdValid;
 
+    [ObservableProperty]
+    private bool _isCustomTonie = false;
+
+    private readonly uint _originalAudioId;
+    private uint _lastGeneratedTimestamp;
+
     public bool DialogResult { get; private set; }
     public uint? NewAudioId { get; private set; }
 
@@ -29,14 +35,40 @@ public partial class ConfirmModifyTonieDialogViewModel : ObservableObject
                   $"but you will lose the original metadata and image icon.\n\n" +
                   $"To enable playback on the Toniebox hardware, the Audio ID must be changed to a custom tonie ID.";
 
-        // Pre-fill with current timestamp using custom tonie calculation
-        uint defaultAudioId = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds() - 0x50000000;
-        AudioIdInput = defaultAudioId.ToString("X8");
+        // Store the original Audio ID
+        _originalAudioId = currentAudioId;
+
+        // Pre-fill with the current Audio ID (convert to timestamp by adding the offset back)
+        // If currentAudioId is already in the custom range, it needs the offset added back
+        // If it's in the official range (>= 0x50000000), use it as-is
+        uint displayTimestamp = currentAudioId >= 0x50000000 ? currentAudioId : currentAudioId + 0x50000000;
+        AudioIdInput = displayTimestamp.ToString();
+        _lastGeneratedTimestamp = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
         ValidateAudioId();
     }
 
     partial void OnAudioIdInputChanged(string value)
     {
+        ValidateAudioId();
+    }
+
+    partial void OnIsCustomTonieChanged(bool value)
+    {
+        // When toggle changes, update the input field
+        if (value)
+        {
+            // Switching to Custom Tonie mode: use current timestamp
+            _lastGeneratedTimestamp = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            AudioIdInput = _lastGeneratedTimestamp.ToString();
+        }
+        else
+        {
+            // Switching back to original mode: restore original Audio ID
+            uint displayTimestamp = _originalAudioId >= 0x50000000 ? _originalAudioId : _originalAudioId + 0x50000000;
+            AudioIdInput = displayTimestamp.ToString();
+        }
+
+        // Re-validate after changing the input
         ValidateAudioId();
     }
 
@@ -47,36 +79,38 @@ public partial class ConfirmModifyTonieDialogViewModel : ObservableObject
 
         if (string.IsNullOrWhiteSpace(AudioIdInput))
         {
-            AudioIdError = "Audio ID is required";
+            AudioIdError = "Audio ID timestamp is required";
             return;
         }
 
-        // Remove any spaces or 0x prefix
-        string cleanInput = AudioIdInput.Trim().Replace(" ", "").ToUpper();
-        if (cleanInput.StartsWith("0X"))
-        {
-            cleanInput = cleanInput.Substring(2);
-        }
+        // Remove any spaces
+        string cleanInput = AudioIdInput.Trim().Replace(" ", "");
 
-        // Validate hex format (8 characters)
-        if (!Regex.IsMatch(cleanInput, "^[0-9A-F]{1,8}$"))
+        // Validate decimal format (up to 10 digits for Unix timestamp)
+        if (!Regex.IsMatch(cleanInput, "^[0-9]{1,10}$"))
         {
-            AudioIdError = "Audio ID must be a valid hexadecimal value (up to 8 characters)";
+            AudioIdError = "Audio ID must be a valid Unix timestamp (decimal number, up to 10 digits)";
             return;
         }
 
-        // Parse the value
-        if (!uint.TryParse(cleanInput, System.Globalization.NumberStyles.HexNumber, null, out uint audioId))
+        // Parse the timestamp value
+        if (!uint.TryParse(cleanInput, out uint timestamp))
         {
-            AudioIdError = "Invalid hexadecimal value";
+            AudioIdError = "Invalid timestamp value";
             return;
         }
 
-        // Warn if the audio ID looks like an official tonie (< 0x50000000)
-        if (audioId < 0x50000000)
+        // Apply custom tonie offset if the switch is enabled
+        uint audioId;
+        if (IsCustomTonie)
         {
-            AudioIdError = "Warning: This looks like an official tonie Audio ID. Custom tonies should use values in the custom range.";
-            // Still allow it, but show warning
+            // Custom tonie: timestamp - 0x50000000
+            audioId = timestamp - 0x50000000;
+        }
+        else
+        {
+            // Use timestamp as-is (for official tonie Audio IDs)
+            audioId = timestamp;
         }
 
         IsAudioIdValid = true;

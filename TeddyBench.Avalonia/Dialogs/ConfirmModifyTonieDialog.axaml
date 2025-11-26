@@ -36,18 +36,38 @@
     <Border Background="#E8F4F8" BorderBrush="#0288D1" BorderThickness="1"
             Padding="10" Margin="0,0,0,15" CornerRadius="5">
       <StackPanel>
-        <TextBlock Text="New Audio ID (hexadecimal):" FontWeight="Bold" Margin="0,0,0,5" Foreground="#01579B"/>
+        <TextBlock Text="New Audio ID (Unix timestamp):" FontWeight="Bold" Margin="0,0,0,5" Foreground="#01579B"/>
+
+        <!-- Custom Tonie Toggle -->
+        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+          <ToggleSwitch IsChecked="{Binding IsCustomTonie}"
+                        OnContent="Custom Tonie"
+                        OffContent="Custom Tonie"
+                        Margin="0,0,10,0"/>
+          <TextBlock Text="(Apply -0x50000000 offset)"
+                     VerticalAlignment="Center"
+                     FontSize="11"
+                     Foreground="#01579B"
+                     IsVisible="{Binding IsCustomTonie}"/>
+          <TextBlock Text="(Use timestamp as-is)"
+                     VerticalAlignment="Center"
+                     FontSize="11"
+                     Foreground="#01579B"
+                     IsVisible="{Binding !IsCustomTonie}"/>
+        </StackPanel>
+
         <TextBox Text="{Binding AudioIdInput}"
-                 Watermark="e.g., 1A2B3C4D"
+                 Watermark="e.g., 1684838575"
                  Margin="0,0,0,5"
-                 MaxLength="10"/>
+                 MaxLength="10"
+                 FontFamily="Consolas, Courier New, monospace"/>
         <TextBlock Text="{Binding AudioIdError}"
                    Foreground="#D32F2F"
                    TextWrapping="Wrap"
                    IsVisible="{Binding AudioIdError, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                    FontSize="11"
                    Margin="0,0,0,5"/>
-        <TextBlock Text="The Audio ID will be changed to ensure the modified tonie works on Toniebox hardware. The folder structure and RFID remain unchanged."
+        <TextBlock Text="Enter a Unix timestamp (seconds since 1970-01-01). When 'Custom Tonie' is enabled, the program will automatically apply the offset calculation. The folder structure and RFID remain unchanged."
                    FontSize="11"
                    TextWrapping="Wrap"
                    Foreground="#01579B"/>
