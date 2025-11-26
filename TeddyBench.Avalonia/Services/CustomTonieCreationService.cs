@@ -44,7 +44,7 @@ public class CustomTonieCreationService
 
     /// <summary>
     /// Creates a custom Tonie file and saves it to the specified directory.
-    /// If audioId is null, the Audio ID is automatically set to the Unix timestamp of file creation.
+    /// If audioId is null, the Audio ID is automatically set to Unix timestamp minus 0x50000000 (custom tonie offset).
     /// </summary>
     /// <param name="targetDirectory">Base directory (typically CONTENT folder)</param>
     /// <param name="reversedUid">The reversed RFID UID for the directory name</param>
@@ -80,21 +80,25 @@ public class CustomTonieCreationService
         }
         else
         {
-            // Generate unique timestamp-based Audio ID
+            // Generate unique timestamp-based Audio ID for custom tonies
+            // Custom tonies use timestamps offset by -0x50000000 to distinguish them from official tonies
             // Use a lock and counter to ensure uniqueness when multiple calls happen in the same second
             lock (_timestampLock)
             {
                 uint currentTimestamp = (uint)DateTimeOffset.UtcNow.ToUnixTimeSeconds();
 
+                // Apply the custom tonie offset
+                uint offsetTimestamp = currentTimestamp - 0x50000000;
+
                 // Ensure we never generate the same timestamp twice
-                if (currentTimestamp <= _lastGeneratedTimestamp)
+                if (offsetTimestamp <= _lastGeneratedTimestamp)
                 {
                     // If current timestamp is same or earlier, increment by 1
                     finalAudioId = _lastGeneratedTimestamp + 1;
                 }
                 else
                 {
-                    finalAudioId = currentTimestamp;
+                    finalAudioId = offsetTimestamp;
                 }
 
                 _lastGeneratedTimestamp = finalAudioId;
