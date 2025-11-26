@@ -203,6 +203,9 @@
                                             <MenuItem Header="Assign new UID"
                                                       Command="{Binding $parent[Window].DataContext.AssignNewUidCommand}"
                                                       CommandParameter="{Binding}"/>
+                                            <MenuItem Header="Change Audio ID"
+                                                      Command="{Binding $parent[Window].DataContext.ChangeAudioIdCommand}"
+                                                      CommandParameter="{Binding}"/>
                                             <MenuItem Header="Toggle LIVE Flag"
                                                       Command="{Binding $parent[Window].DataContext.ToggleLiveFlagCommand}"
                                                       CommandParameter="{Binding}"/>

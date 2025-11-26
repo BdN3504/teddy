@@ -1760,6 +1760,84 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task ChangeAudioId(TonieFileItem? file)
+    {
+        if (file == null)
+        {
+            StatusText = "Please select a file first";
+            return;
+        }
+
+        if (string.IsNullOrEmpty(CurrentDirectory))
+        {
+            StatusText = "Error: No directory is currently open";
+            return;
+        }
+
+        try
+        {
+            // Load the Tonie file to get the current Audio ID
+            var tonieAudio = TonieAudio.FromFile(file.FilePath);
+            uint currentAudioId = tonieAudio.Header.AudioId;
+
+            // Show the Change Audio ID dialog
+            var dialog = new ChangeAudioIdDialog(currentAudioId);
+            var result = await dialog.ShowDialog<bool?>(_window);
+
+            if (result != true)
+            {
+                StatusText = "Operation cancelled";
+                return;
+            }
+
+            // Get the new Audio ID from the dialog
+            uint? newAudioId = dialog.GetAudioId();
+            if (newAudioId == null)
+            {
+                StatusText = "Error: Invalid Audio ID";
+                return;
+            }
+
+            // Check if the Audio ID has changed
+            if (newAudioId.Value == currentAudioId)
+            {
+                StatusText = "Audio ID unchanged";
+                return;
+            }
+
+            StatusText = $"Updating Audio ID from 0x{currentAudioId:X8} to 0x{newAudioId.Value:X8}...";
+
+            // Update the Audio ID in the header
+            tonieAudio.Header.AudioId = newAudioId.Value;
+
+            // Recalculate the hash of the audio data
+            using (var sha1 = System.Security.Cryptography.SHA1.Create())
+            {
+                byte[] hash = sha1.ComputeHash(tonieAudio.Audio);
+                tonieAudio.Header.Hash = hash;
+            }
+
+            // Update the file content with the new header
+            tonieAudio.UpdateFileContent();
+
+            // Write the updated file back to disk
+            File.WriteAllBytes(file.FilePath, tonieAudio.FileContent);
+
+            StatusText = $"Successfully changed Audio ID to 0x{newAudioId.Value:X8}";
+
+            // Refresh the file info if it's currently displayed
+            if (HasDetailedInfo && SelectedFile?.FilePath == file.FilePath)
+            {
+                await ShowTonieInfo(file);
+            }
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"Error changing Audio ID: {ex.Message}";
+        }
+    }
+
+    [RelayCommand]
     private async Task DeleteMultipleTonie()
     {
         if (SelectedItems == null || SelectedItems.Count == 0)
