@@ -28,6 +28,9 @@ public partial class MainWindow : Window
     private readonly HashSet<Key> _pressedKeys = new HashSet<Key>();
     private bool _shouldFocusFirstItem = false;
     private List<List<TonieFileItem>>? _cachedGrid = null;
+    private bool _mnemonicModeActive = false;
+    private System.Threading.CancellationTokenSource? _mnemonicModeCancellation = null;
+    private bool _suppressNextAltToggle = false;
 
     public MainWindow()
     {
@@ -278,6 +281,43 @@ public partial class MainWindow : Window
 
         // Key released - allow it to be processed again
         _pressedKeys.Remove(e.Key);
+
+        // If Alt key is released, check if we should enter or exit mnemonic mode
+        if (e.Key == Key.LeftAlt || e.Key == Key.RightAlt)
+        {
+            // Check if we should suppress this toggle (because KeyDown already handled it)
+            if (_suppressNextAltToggle)
+            {
+                _suppressNextAltToggle = false;
+                return;
+            }
+
+            if (_mnemonicModeActive)
+            {
+                // Alt released while already in mnemonic mode - exit it (toggle off)
+                _ = ExitMnemonicMode();
+            }
+            else
+            {
+                // Alt released while not in mnemonic mode - enter it (toggle on)
+                _mnemonicModeActive = true;
+
+                // Cancel any existing mnemonic mode timer
+                _mnemonicModeCancellation?.Cancel();
+                _mnemonicModeCancellation = new System.Threading.CancellationTokenSource();
+
+                // Exit mnemonic mode after 3 seconds
+                var cancellationToken = _mnemonicModeCancellation.Token;
+                _ = Task.Run(async () =>
+                {
+                    await Task.Delay(3000, cancellationToken);
+                    if (!cancellationToken.IsCancellationRequested)
+                    {
+                        await ExitMnemonicMode();
+                    }
+                }, cancellationToken);
+            }
+        }
     }
 
     private async void MainWindow_KeyDown(object? sender, KeyEventArgs e)
@@ -285,7 +325,51 @@ public partial class MainWindow : Window
         if (DataContext is not MainWindowViewModel viewModel)
             return;
 
+        // Check if Alt key is pressed or held, OR if we're in mnemonic mode
+        // This allows mnemonics to work properly both when Alt is held and when Alt was just released
+        bool isAltHeld = e.KeyModifiers.HasFlag(KeyModifiers.Alt);
+        bool isMnemonicActive = isAltHeld || _mnemonicModeActive;
+
+        // If Alt is pressed while in mnemonic mode, exit mnemonic mode (toggle behavior)
+        if (_mnemonicModeActive && (e.Key == Key.LeftAlt || e.Key == Key.RightAlt))
+        {
+            await ExitMnemonicMode();
+            // Set flag to suppress the KeyUp toggle that will follow
+            _suppressNextAltToggle = true;
+            e.Handled = true;
+            return;
+        }
+
+        // If we're in mnemonic mode (Alt was just released or Alt is held),
+        // we need to manually trigger mnemonic commands since Tunnel routing prevents AccessKey from working
+        if (_mnemonicModeActive && e.Key != Key.LeftAlt && e.Key != Key.RightAlt)
+        {
+            // Check if this is a letter key that could be a mnemonic
+            if (e.Key >= Key.A && e.Key <= Key.Z)
+            {
+                // Manually handle mnemonics since Tunnel routing blocks Avalonia's AccessKey system
+                var handled = await HandleMnemonicKey(e.Key, viewModel);
+                if (handled)
+                {
+                    await ExitMnemonicMode();
+                    e.Handled = true;
+                    return;
+                }
+                else
+                {
+                    await ExitMnemonicMode();
+                    // Fall through to normal processing
+                }
+            }
+            else
+            {
+                await ExitMnemonicMode();
+                // Fall through to normal processing for non-letter keys
+            }
+        }
+
         // Key debouncing: ignore repeated KeyDown events from holding a key
+        // Do this AFTER mnemonic check so mnemonics aren't blocked by debouncing
         if (_pressedKeys.Contains(e.Key))
         {
             e.Handled = true;
@@ -369,7 +453,8 @@ public partial class MainWindow : Window
             }
         }
         // Handle text input for search (alphanumeric and basic punctuation)
-        else if (e.KeySymbol != null && !string.IsNullOrEmpty(e.KeySymbol) && IsSearchableCharacter(e.KeySymbol))
+        // Skip search input when Alt is active OR mnemonic mode is active to allow mnemonics to work
+        else if (!isMnemonicActive && e.KeySymbol != null && !string.IsNullOrEmpty(e.KeySymbol) && IsSearchableCharacter(e.KeySymbol))
         {
             // Add character to search
             viewModel.HandleSearchInput(viewModel.SearchText + e.KeySymbol);
@@ -556,5 +641,105 @@ public partial class MainWindow : Window
             viewModel.OpenContainingFolderCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    private async Task ExitMnemonicMode()
+    {
+        // Cancel the timeout timer
+        _mnemonicModeCancellation?.Cancel();
+        _mnemonicModeActive = false;
+
+        // Note: The mnemonic underlines are controlled by Avalonia's internal AccessKey system
+        // They automatically clear when the user clicks anywhere, but cannot be programmatically
+        // cleared through focus changes or synthetic events. This is a known Avalonia limitation.
+        // The underlines are purely cosmetic and don't affect functionality.
+
+        // Focus the ListBox to ensure keyboard navigation works
+        await global::Avalonia.Threading.Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            var listBox = this.FindControl<ListBox>("TonieListBox");
+            if (listBox != null)
+            {
+                // If there's a selected item, try to focus its container
+                if (listBox.SelectedItem != null && listBox.SelectedIndex >= 0)
+                {
+                    var container = listBox.ContainerFromIndex(listBox.SelectedIndex) as Control;
+                    if (container != null)
+                    {
+                        container.Focus();
+                        return;
+                    }
+                }
+
+                // Otherwise focus the ListBox itself
+                listBox.Focus();
+            }
+        });
+    }
+
+    private async Task<bool> HandleMnemonicKey(Key key, MainWindowViewModel viewModel)
+    {
+        // Map keys to their corresponding mnemonic commands
+        // Based on the button Content properties with underscore prefixes
+        switch (key)
+        {
+            case Key.O: // _Open Directory
+                if (viewModel.OpenDirectoryCommand.CanExecute(null))
+                {
+                    await viewModel.OpenDirectoryCommand.ExecuteAsync(null);
+                    return true;
+                }
+                break;
+
+            case Key.A: // _Add Custom Tonie
+                if (viewModel.HasValidDirectory && viewModel.AddCustomTonieCommand.CanExecute(null))
+                {
+                    await viewModel.AddCustomTonieCommand.ExecuteAsync(null);
+                    return true;
+                }
+                break;
+
+            case Key.D: // _Decode Selected
+                if (viewModel.DecodeSelectedCommand.CanExecute(null))
+                {
+                    await viewModel.DecodeSelectedCommand.ExecuteAsync(null);
+                    return true;
+                }
+                break;
+
+            case Key.S: // _Show Info
+                if (viewModel.ShowInfoCommand.CanExecute(null))
+                {
+                    await viewModel.ShowInfoCommand.ExecuteAsync(null);
+                    return true;
+                }
+                break;
+
+            case Key.R: // _Refresh
+                if (viewModel.RefreshCommand.CanExecute(null))
+                {
+                    await viewModel.RefreshCommand.ExecuteAsync(null);
+                    return true;
+                }
+                break;
+
+            case Key.L: // Remove All _LIVE Flags
+                if (viewModel.RemoveAllLiveFlagsCommand.CanExecute(null))
+                {
+                    await viewModel.RemoveAllLiveFlagsCommand.ExecuteAsync(null);
+                    return true;
+                }
+                break;
+
+            case Key.T: // _TRASHCAN Recovery
+                if (viewModel.HasValidDirectory && viewModel.OpenTrashcanManagerCommand.CanExecute(null))
+                {
+                    await viewModel.OpenTrashcanManagerCommand.ExecuteAsync(null);
+                    return true;
+                }
+                break;
+        }
+
+        return false;
     }
 }
