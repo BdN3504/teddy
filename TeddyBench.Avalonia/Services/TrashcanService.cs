@@ -299,10 +299,10 @@ namespace TeddyBench.Avalonia.Services
                 // Use overwrite parameter to control behavior
                 await Task.Run(() => File.Copy(deletedTonie.FilePath, targetFilePath, allowOverwrite));
 
-                // Restore original Audio ID if it's a custom tonie
+                // Restore original Audio ID if it's a custom tonie with known AudioID
                 if (deletedTonie.IsCustomTonie)
                 {
-                    // Get metadata from customTonies.json (use different variable name to avoid conflict)
+                    // Get metadata from customTonies.json
                     var tonieMetadata = _metadataService.GetCustomTonieMetadata(deletedTonie.Hash);
 
                     if (tonieMetadata != null && tonieMetadata.AudioId != null && tonieMetadata.AudioId.Count > 0)
@@ -319,17 +319,32 @@ namespace TeddyBench.Avalonia.Services
 
                         if (parsed)
                         {
-                            // Read the restored file
-                            var restoredTonie = TonieAudio.FromFile(targetFilePath, readAudio: true);
+                            // Read the restored file with audio data
+                            var restoredTonie = await Task.Run(() => TonieAudio.FromFile(targetFilePath, readAudio: true));
 
-                            // Update the Audio ID in the header to the original value
-                            restoredTonie.Header.AudioId = originalAudioId;
+                            // Update the stream serial number (Audio ID) in the Ogg audio data
+                            // This properly updates both the header AND the Ogg stream serial number
+                            // resetGranulePositions = false because we want to preserve the original granule positions
+                            byte[] updatedAudioData = await Task.Run(() => restoredTonie.UpdateStreamSerialNumber(originalAudioId, resetGranulePositions: false));
 
-                            // Update FileContent to reflect the header change
-                            restoredTonie.UpdateFileContent();
+                            // Create a new TonieAudio with the updated audio data
+                            var correctedTonie = new TonieAudio();
+                            correctedTonie.Audio = updatedAudioData;
+                            correctedTonie.Header.AudioLength = updatedAudioData.Length;
+                            correctedTonie.Header.AudioId = originalAudioId;
+                            correctedTonie.Header.AudioChapters = restoredTonie.Header.AudioChapters;
 
-                            // Write the file back with the corrected Audio ID
-                            File.WriteAllBytes(targetFilePath, restoredTonie.FileContent);
+                            // Compute hash of the updated audio data
+                            using var sha1 = System.Security.Cryptography.SHA1.Create();
+                            correctedTonie.Header.Hash = sha1.ComputeHash(updatedAudioData);
+
+                            // Build the file content (header + audio)
+                            correctedTonie.FileContent = new byte[updatedAudioData.Length + 0x1000];
+                            Array.Copy(updatedAudioData, 0, correctedTonie.FileContent, 0x1000, updatedAudioData.Length);
+                            correctedTonie.UpdateFileContent();
+
+                            // Write the file back with the corrected Audio ID in both header and Ogg stream
+                            await Task.Run(() => File.WriteAllBytes(targetFilePath, correctedTonie.FileContent));
                         }
                     }
                 }
