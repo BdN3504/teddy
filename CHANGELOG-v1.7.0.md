@@ -41,7 +41,7 @@ Enhanced cross-platform fork with .NET 8.0 and improved compatibility.
   - **Automatic track sorting by ID3 tag track numbers** - reads audio file metadata to intelligently order tracks
   - **Enhanced track display with ID3 metadata** - track sort dialog shows formatted track names (track number - artist - title) extracted from audio file ID3 tags
   - Configurable RFID prefix (default: 0EED)
-  - Automatic title generation from source folder name
+  - **Smart title generation from audio metadata** - automatically creates Tonie titles using ID3 tags with priority: Album Artist - Album Title, then Artist - Album Title, then Album Title alone, falling back to folder name
   - Custom metadata management via customTonies.json
   - **Lossless Tonie Modification** - when adding tracks to existing Tonies, the system now uses efficient in-place editing that preserves the original audio encoding without decoding and re-encoding
   - **Audio ID Modification** - users can now change the Audio ID for any Tonie (custom or official)
