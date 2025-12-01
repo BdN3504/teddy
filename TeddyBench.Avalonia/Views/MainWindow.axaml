@@ -251,6 +251,14 @@
                 <StackPanel Margin="10" Spacing="8">
                     <TextBlock Text="Selected File Details:" FontWeight="Bold" Margin="0,0,0,5"/>
 
+                    <!-- Title -->
+                    <StackPanel Orientation="Horizontal" Spacing="5">
+                        <TextBlock Text="Title:" Width="120"/>
+                        <TextBlock>
+                            <Run Text="{Binding SelectedFile.DisplayName}"/>
+                        </TextBlock>
+                    </StackPanel>
+
                     <!-- Containing Folder with Copy Button -->
                     <StackPanel Orientation="Horizontal" Spacing="5">
                         <TextBlock Text="Containing Folder:" Width="120" VerticalAlignment="Center"/>

@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Linq;
 using TonieFile;
+using TagLib;
 
 namespace TeddyBench.Avalonia.Services;
 
@@ -57,10 +58,35 @@ public class TonieFileService
 
     /// <summary>
     /// Determines the source folder name from audio file paths (for custom Tonie naming).
-    /// Uses the folder with most files, alphabetically first on tie.
+    /// Priority: Album Artist - Album Title, then Artist - Album Title, then Album Title, then folder name.
     /// </summary>
     public string GetSourceFolderName(string[] audioPaths)
     {
+        // Try to read metadata from audio files
+        foreach (var audioPath in audioPaths)
+        {
+            var (albumArtist, artist, albumTitle) = ReadAlbumMetadata(audioPath);
+
+            // Priority 1: Album Artist - Album Title
+            if (!string.IsNullOrWhiteSpace(albumArtist) && !string.IsNullOrWhiteSpace(albumTitle))
+            {
+                return $"{albumArtist} - {albumTitle}";
+            }
+
+            // Priority 2: Artist - Album Title
+            if (!string.IsNullOrWhiteSpace(artist) && !string.IsNullOrWhiteSpace(albumTitle))
+            {
+                return $"{artist} - {albumTitle}";
+            }
+
+            // Priority 3: Album Title only
+            if (!string.IsNullOrWhiteSpace(albumTitle))
+            {
+                return albumTitle;
+            }
+        }
+
+        // Fallback: Use folder name with most files, alphabetically first on tie
         var folderGroups = audioPaths
             .Select(p => Path.GetDirectoryName(p))
             .Where(d => !string.IsNullOrEmpty(d))
@@ -73,6 +99,35 @@ public class TonieFileService
         return folderGroups.Count > 0
             ? Path.GetFileName(folderGroups[0].FolderPath) ?? "Custom Tonie"
             : "Custom Tonie";
+    }
+
+    /// <summary>
+    /// Reads album-level metadata from an audio file using TagLibSharp.
+    /// Returns (null, null, null) if metadata cannot be read or is empty.
+    /// </summary>
+    private (string? albumArtist, string? artist, string? albumTitle) ReadAlbumMetadata(string filePath)
+    {
+        try
+        {
+            using (var file = TagLib.File.Create(filePath))
+            {
+                var albumArtist = file.Tag.FirstAlbumArtist;
+                var artist = file.Tag.FirstPerformer;
+                var albumTitle = file.Tag.Album;
+
+                // Return null if strings are empty or whitespace
+                albumArtist = string.IsNullOrWhiteSpace(albumArtist) ? null : albumArtist;
+                artist = string.IsNullOrWhiteSpace(artist) ? null : artist;
+                albumTitle = string.IsNullOrWhiteSpace(albumTitle) ? null : albumTitle;
+
+                return (albumArtist, artist, albumTitle);
+            }
+        }
+        catch
+        {
+            // Failed to read metadata - return null values
+            return (null, null, null);
+        }
     }
 
     /// <summary>

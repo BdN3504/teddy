@@ -88,15 +88,19 @@ TeddyBench ─────────────┘                           
   - Auto-detects Toniebox SD cards and navigates to CONTENT folder
   - Displays Tonies as icons with proper titles instead of cryptic filenames
   - Custom tonies support via customTonies.json (hash-to-title mapping for unknown tonies)
-    - Uses source folder name as tonie title (folder with most files, alphabetically first on tie)
+    - Tonie title determined from audio metadata tags with priority: Album Artist - Album Title, Artist - Album Title, Album Title, or folder name (fallback)
     - RFID stored in reverse byte order in customTonies.json for readability
-    - Format: `"FolderName [RFID: 0EED5104]"` (user-entered format, not directory format)
+    - Format: `"Title [RFID: 0EED5104]"` (user-entered format, not directory format)
   - Add Custom Tonie workflow:
     - RFID input: 4-character user input + 4-character configurable prefix (default "0EED" in reverse byte order)
     - Entire 8-character string editable with automatic uppercase conversion
     - Multi-format audio file picker: MP3, OGG, FLAC, WAV, M4A, AAC, WMA
     - Track sorting dialog with Move Up/Down buttons and multi-selection (Shift/Ctrl)
-    - Automatically uses source folder name as tonie title
+    - Automatically determines tonie title using metadata tags with priority:
+      1. Album Artist - Album Title (if both exist)
+      2. Artist - Album Title (if Album Artist missing but Artist and Album Title exist)
+      3. Album Title (if only Album Title set)
+      4. Source folder name (fallback)
     - Creates RFID directory structure: `{reversed-uid}/500304E0`
   - Delete functionality:
     - Confirmation dialog before deletion
@@ -244,9 +248,9 @@ Teddy.exe -m encode -b 96 -vbr -p prefix_folder/ input_folder/
 - Takes precedence over tonies.json entries
 - Stored in application base directory
 - TeddyBench.Avalonia format:
-  - Uses source folder name as the tonie title (folder with most files, alphabetically first on tie)
+  - Determines title from audio metadata tags with priority: Album Artist - Album Title, Artist - Album Title, Album Title, or folder name (fallback)
   - RFID stored in reverse byte order for readability (user-entered format, not directory format)
-  - Example: If user enters RFID `0EED5104` and selects files from `Album Name` folder, entry becomes: `"HASH123...": "Album Name [RFID: 0EED5104]"`
+  - Example: If user enters RFID `0EED5104` and audio files have "The Beatles" as Album Artist and "Abbey Road" as Album Title, entry becomes: `"HASH123...": "The Beatles - Abbey Road [RFID: 0EED5104]"`
   - Directory on SD card: `0451ED0E/500304E0` (reversed)
 
 **LIVE Flag:**
